@@ -33,12 +33,9 @@ tar_option_set(
 path <- list(
   base_data    = "Initial data/base_data_plus.xlsx",
   empl_shares  = "Initial data/Sector data/EMPL_Region.xlsx",
-  n_enterpr    = "Initial data/Sector data/N_Enterpr.xlsx",
   qog          = "Initial data/Non sector data/qog_eureg.csv",
   qog_ei       = "Initial data/Non sector data/qog_ei_eureg.csv",
-  enspreso     = "Initial data/Non sector data/ENSPRESO_Integrated_Data/ENSPRESO_Integrated_NUTS2_Data.csv",
-  ris          = "Initial data/RIS_2023.xlsx",
-  highly_skilled = "Initial data/eurostat-extraction-highly-skilled-employed-people-2022.xlsx"
+  enspreso     = "Initial data/Non sector data/ENSPRESO_Integrated_Data/ENSPRESO_Integrated_NUTS2_Data.csv"
 )
 
 # Non-sector indicator files
