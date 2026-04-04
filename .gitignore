@@ -8,6 +8,10 @@
 # targets
 Code and data/_targets/
 
+# Manuscript and review
+Climate Policy/
+Review/
+
 # OS
 .DS_Store
 Thumbs.db
