@@ -1,0 +1,166 @@
+# ── 04_normalize.R ── Per-employee adjustment & min-max normalization ─────────
+#
+# Exported function:
+#   normalize_indicators()
+
+
+library(dplyr)
+library(tidyr)
+library(readxl)
+
+# ── normalize_indicators() ──────────────────────────────────────────────────
+
+#' Filter excluded NUTS, divide intensive indicators by employment, min-max
+#' normalise to [0.01, 0.99], and reverse negative-direction indicators.
+#'
+#' @param data_long    Tibble from reshape_to_grid().
+#' @param empl_weights Path to Regional_Employment_Weights.xlsx **or** a tibble
+#'                     with columns NUTS_ID, Sector_ID, pers_employed.
+#' @return Named list:
+#'   \describe{
+#'     \item{$long}{Long normalised tibble (one row per region x sector x indicator)}
+#'     \item{$wide}{Wide normalised tibble (one column per indicator, using Value_N)}
+#'   }
+normalize_indicators <- function(data_long, empl_weights) {
+
+  # ── 1. Filter excluded NUTS regions & drop Share_of_Employment ──
+  data_ready <- data_long |>
+    filter(!NUTS_ID %in% excluded_nuts) |>
+    filter(Indicator != "Share_of_Employment")
+
+  # ── 2. Prepare employment weights ──
+  if (is.character(empl_weights)) {
+    empl_data <- read_xlsx(empl_weights) |>
+      filter(nchar(NUTS_ID) == 4)
+  } else {
+    empl_data <- empl_weights |>
+      filter(nchar(NUTS_ID) == 4)
+  }
+
+  # Handle NUTS recombinations in employment data
+
+  # Croatia: HR04 = HR02 + HR05 + HR06
+  hr04_empl <- empl_data |>
+    filter(NUTS_ID %in% c("HR02", "HR05", "HR06")) |>
+    group_by(Country_ID, Sector_ID) |>
+    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
+              weight        = sum(weight, na.rm = TRUE),
+              .groups = "drop") |>
+    mutate(NUTS_ID = "HR04")
+
+  # Netherlands: NL35 -> NL31, NL36 -> NL33
+  nl_remap <- empl_data |>
+    filter(NUTS_ID %in% c("NL35", "NL36")) |>
+    mutate(NUTS_ID = case_when(
+      NUTS_ID == "NL35" ~ "NL31",
+      NUTS_ID == "NL36" ~ "NL33",
+      TRUE              ~ NUTS_ID
+    ))
+
+  # Portugal: PT19+PT1D -> PT16, PT1A+PT1B -> PT17, PT1C -> PT18
+  pt_remap <- empl_data |>
+    filter(NUTS_ID %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
+    mutate(target = case_when(
+      NUTS_ID %in% c("PT19", "PT1D") ~ "PT16",
+      NUTS_ID %in% c("PT1A", "PT1B") ~ "PT17",
+      NUTS_ID == "PT1C"              ~ "PT18",
+      TRUE                           ~ NUTS_ID
+    )) |>
+    group_by(Country_ID, Sector_ID, target) |>
+    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
+              weight        = sum(weight, na.rm = TRUE),
+              .groups = "drop") |>
+    rename(NUTS_ID = target)
+
+  empl_data <- bind_rows(empl_data, hr04_empl, nl_remap, pt_remap) |>
+    group_by(NUTS_ID, Sector_ID) |>
+    slice_max(pers_employed, n = 1, with_ties = FALSE) |>
+    ungroup()
+
+  # ── 3. Join employment counts & divide intensive indicators ──
+  # Note: GHG_Emissions, Scope2_Emissions, and Energy_Consumption are already
+
+  # downscaled to regions via employment weights in the Create scripts.
+  # Dividing again by pers_employed would double-count and inflate small regions.
+  # Only divide indicators that are NOT already employment-weighted.
+  to_per_empl <- c("Gross_Fixed_Capital_Formation", "BERD")
+
+  data_ready <- data_ready |>
+    select(-any_of(c("n_enterprises", "pers_employed"))) |>
+    left_join(
+      empl_data |> distinct(NUTS_ID, Sector_ID, pers_employed),
+      by = c("NUTS_ID", "Sector_ID")
+    ) |>
+    # Set values to NA for region-sectors with zero employment
+    # (sector doesn't meaningfully exist there)
+    mutate(
+      Value = if_else(
+        !is.na(pers_employed) & pers_employed == 0,
+        NA_real_,
+        Value
+      )
+    ) |>
+    mutate(
+      Value = if_else(
+        Indicator %in% to_per_empl & !is.na(pers_employed) & pers_employed > 0,
+        Value / pers_employed,
+        Value
+      ),
+      Notes = if_else(
+        Indicator %in% to_per_empl,
+        if_else(is.na(Notes) | Notes == "",
+                "per employee",
+                paste(Notes, "per employee", sep = "; ")),
+        Notes
+      )
+    )
+
+  # ── 4. Min-max normalise to [0.01, 0.99] by Indicator x Sector_ID ──
+  positive_indicators <- c(
+    "GHG_Emissions", "Scope2_Emissions", "Policy_Pressure",
+    "Energy_Consumption", "Fossil_Share",
+    "Unemployment_Rate", "Labour_Market_Slack",
+    "Export_ExtraEU", "Import_ExtraEU",
+    "HHI_Employment"
+  )
+
+  data_long_norm <- data_ready |>
+    group_by(Indicator, Sector_ID) |>
+    mutate(
+      min_val = min(Value, na.rm = TRUE),
+      max_val = max(Value, na.rm = TRUE),
+      norm0_1 = if_else(
+        max_val - min_val == 0,
+        0.5,
+        (Value - min_val) / (max_val - min_val)
+      ),
+      Value_N = case_when(
+        Indicator == "GHG_Emissions" & Value == 0 ~ 0.00,
+        Value == min_val                          ~ 0.01,
+        Value == max_val                          ~ 0.99,
+        TRUE                                      ~ 0.01 + norm0_1 * 0.98
+      )
+    ) |>
+    ungroup() |>
+    # 5. Reverse negative indicators (higher raw value = lower vulnerability)
+    mutate(
+      Value_N = if_else(Indicator %in% positive_indicators, Value_N, 1 - Value_N),
+      Value_N = round(Value_N, 3)
+    ) |>
+    relocate(Value_N, .after = Value) |>
+    select(-min_val, -max_val, -norm0_1)
+
+  # ── 6. Build wide version ──
+  data_wide_norm <- data_long_norm |>
+    select(-c(Value, Component, Dimension, Unit, Notes)) |>
+    group_by(Country_ID, NUTS_ID, NUTS_Name,
+             Sector_ID, Sector_Name,
+             pers_employed, Indicator) |>
+    summarise(Value_N = mean(Value_N, na.rm = TRUE), .groups = "drop") |>
+    pivot_wider(names_from = Indicator, values_from = Value_N)
+
+  list(
+    long = tibble::as_tibble(data_long_norm),
+    wide = tibble::as_tibble(data_wide_norm)
+  )
+}

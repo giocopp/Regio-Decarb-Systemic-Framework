@@ -1,0 +1,23 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+.Rapp.history
+
+# targets
+Code and data/_targets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data files (track with git-lfs or download separately)
+Code and data/Initial data/Non sector data/qog_eureg.csv
+Code and data/Initial data/Non sector data/qog_ei_eureg.csv
+Code and data/Initial data/Non sector data/ENSPRESO_Integrated_Data/
+
+# Derived outputs (reproducible via targets)
+Code and data/Derived data/
+Code and data/Final data/
+Code and data/Figures/
