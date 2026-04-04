@@ -29,7 +29,11 @@ be classified as high-risk).
 ## Repository structure
 
 ```
-Paper-Systemic-Framework-repo/
+Regio-Decarb-Systemic-Framework/
+|
+|-- README.md                    # This file
+|-- .gitignore
+|-- Regio-Decarb-Systemic-Framework.Rproj
 |
 |-- Climate Policy/              # Manuscript files
 |   |-- CPmain.docx              # Main paper
@@ -45,6 +49,7 @@ Paper-Systemic-Framework-repo/
 +-- Code and data/               # Analysis (self-contained)
     |
     |-- _targets.R               # Pipeline definition (targets)
+    |
     |-- R/                       # Function files (sourced by targets)
     |   |-- utils.R              # Shared helpers and constants
     |   |-- 01_create_data.R     # Download & process raw inputs
@@ -55,17 +60,23 @@ Paper-Systemic-Framework-repo/
     |   |-- 06_visualize.R       # Maps and radar charts
     |   +-- 07_sensitivity.R     # Robustness checks
     |
-    |-- Code/                    # Original standalone scripts (legacy)
+    |-- Code/                    # Standalone scripts (legacy/reference)
+    |   |-- 1A-non-sector-data.R ... 6-sensitivity-analysis.R
     |   +-- Create Initial Data/ # Scripts to rebuild Initial data/
     |
     |-- Initial data/            # Input datasets
     |   |-- base_data_plus.xlsx  # NUTS-2 region reference list
-    |   |-- Sector data/         # Sector x region indicators
-    |   +-- Non sector data/     # Region-level indicators
+    |   |-- Regional_Employment_Weights.xlsx
+    |   |-- RIS_2023.xlsx        # Regional Innovation Scoreboard
+    |   |-- Sector data/         # Sector x region indicators (17 xlsx)
+    |   +-- Non sector data/     # Region-level indicators (12 xlsx)
+    |       |-- ENSPRESO_Integrated_Data/  # JRC RE potential (manual download)
+    |       |-- qog_eureg.csv              # QoG regional data (manual download)
+    |       +-- qog_ei_eureg.csv           # QoG environmental (manual download)
     |
     |-- Derived data/            # Intermediate outputs (reproducible)
-    |-- Final data/              # Analysis-ready tables (reproducible)
-    +-- Figures/                 # Exported figures (reproducible)
+    |-- Final data/              # Risk_data.xlsx, Sensitivity_Analysis.xlsx
+    +-- Figures/                 # Figures 3-6 (PNG, 600 DPI)
 ```
 
 ## How to reproduce
