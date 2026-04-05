@@ -20,7 +20,7 @@ aggregate_risk <- function(norm_wide) {
                         "Renewables_Share", "RE_Potential"),
     Labour          = c("Unemployment_Rate", "Labour_Market_Slack",
                         "Highly_Skilled_Workers"),
-    Finance         = c("Gross_Fixed_Capital_Formation"),
+    Finance         = c("Gross_Fixed_Capital_Formation", "Cohesion_Fund"),
     Supply_Chain    = c("Import_ExtraEU"),
     Technology      = c("BERD", "Regional_Innovation"),
     Institutions    = c("QoG_Index", "Climate_Mitigation_Laws"),

@@ -4,13 +4,8 @@
 #   harmonize_non_sector()
 #   harmonize_sector()
 #   combine_all()
-
-
-library(readxl)
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(janitor)
+#
+# Packages loaded via tar_option_set() in _targets.R
 
 # ── helpers (internal) ────────────────────────────────────────────────────────
 
@@ -164,12 +159,10 @@ harmonize_non_sector <- function(file_paths, base_data_path) {
       Indicator == "Capital_Stock_Based_Prod"    ~ "Index",
       Indicator == "Regional_Innovation"         ~ "Index",
       Indicator == "Unemployment"                ~ "Percentage",
-      Indicator == "Wages"                       ~ "Euro per hour",
       TRUE                                       ~ Unit
     )) |>
     filter(!(Dimension == "Technology" & is.na(Indicator))) |>
     mutate(Indicator = case_when(
-      Indicator == "Wages"        ~ "Wage_per_h",
       Indicator == "Unemployment" ~ "Unemployment_rate",
       Indicator == "GFCF"        ~ "Gross_Fixed_Capital_Formation",
       Indicator == "HHI"         ~ "HHI_Employment",
@@ -354,7 +347,6 @@ combine_all <- function(sector_data, non_sector_data) {
       Indicator = case_when(
         Indicator == "Energy consumption"  ~ "Energy_Consumption",
         Indicator == "Unemployment_rate"   ~ "Unemployment_Rate",
-        Indicator == "Wage_per_h"          ~ "Wage_Per_h",
         TRUE                               ~ Indicator
       ),
       Dimension = case_when(

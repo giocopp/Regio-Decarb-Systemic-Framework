@@ -98,7 +98,9 @@
 #' @param risk_data Tibble from aggregate_risk()
 #' @param output_dir Character path for saving PNGs
 #' @return Character vector of saved file paths (invisibly)
-plot_tri_maps <- function(risk_data, output_dir) {
+plot_tri_maps <- function(risk_data, output_dir,
+                          sectors = c("Total Manufacturing",
+                                      "Manufacturing of Basic Metal Products")) {
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -113,14 +115,10 @@ plot_tri_maps <- function(risk_data, output_dir) {
   mapping_sf <- layers$nuts2 |>
     dplyr::left_join(risk_data, by = "NUTS_ID")
 
-  # Sectors to map
-  sectors <- c(
-    "Total Manufacturing",
-    "Manufacturing of Basic Metal Products"
-  )
-  name_map <- c(
-    "Total Manufacturing"                      = "total manufacturing",
-    "Manufacturing of Basic Metal Products"     = "basic metals"
+  # Derive filename slugs from sector names
+  name_map <- setNames(
+    tolower(gsub("[[:space:]]+", "_", sectors)),
+    sectors
   )
 
   # Palettes
@@ -269,7 +267,10 @@ plot_tri_maps <- function(risk_data, output_dir) {
 #' @param risk_data Tibble from aggregate_risk()
 #' @param output_dir Character path for saving PNGs
 #' @return Character vector of saved file paths (invisibly)
-plot_radar_charts <- function(risk_data, output_dir) {
+plot_radar_charts <- function(risk_data, output_dir,
+                              sectors = c("Total Manufacturing",
+                                          "Manufacturing of Basic Metal Products"),
+                              countries = c("DE", "EL")) {
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -286,47 +287,35 @@ plot_radar_charts <- function(risk_data, output_dir) {
     "Diversification"
   )
 
-  countries <- c("DE", "EL")
-  region_cols <- c("firebrick", "darkolivegreen4",
-                   "firebrick", "darkolivegreen4")
+  region_cols <- rep(c("firebrick", "darkolivegreen4"), length(countries))
 
   saved <- character()
 
-  # ── Figure 5: Total Manufacturing ──────────────────────────────
-  sel_total <- .select_extremes(risk_data, "Total Manufacturing", countries)
+  for (idx in seq_along(sectors)) {
+    s <- sectors[idx]
+    sel <- .select_extremes(risk_data, s, countries)
+    if (nrow(sel) == 0) next
 
-  outfile5 <- file.path(output_dir, "Figure_5.png")
-  grDevices::png(outfile5, width = 1800, height = 1800, res = 150)
-  graphics::par(mfrow = c(2, 2))
-  for (i in seq_len(nrow(sel_total))) {
-    r <- sel_total[i, ]
-    caption <- sprintf(
-      "%s (%s)\nTotal Manufacturing\n%s risk (Risk = %.2f)",
-      r$NUTS_Name, r$Country_ID, r$Risk_Position, r$Risk_norm
-    )
-    .plot_one_radar(r, radar_vars, radar_labels, caption, region_cols[i])
+    fig_num <- idx + 4L
+    outfile <- file.path(output_dir, paste0("Figure_", fig_num, ".png"))
+    n_panels <- nrow(sel)
+    ncols <- min(n_panels, 2L)
+    nrows <- ceiling(n_panels / ncols)
+
+    grDevices::png(outfile, width = 1800, height = 1800, res = 150)
+    graphics::par(mfrow = c(nrows, ncols))
+    for (i in seq_len(n_panels)) {
+      r <- sel[i, ]
+      caption <- sprintf(
+        "%s (%s)\n%s\n%s risk (Risk = %.2f)",
+        r$NUTS_Name, r$Country_ID, s, r$Risk_Position, r$Risk_norm
+      )
+      .plot_one_radar(r, radar_vars, radar_labels, caption,
+                      region_cols[((i - 1L) %% length(region_cols)) + 1L])
+    }
+    grDevices::dev.off()
+    saved <- c(saved, outfile)
   }
-  grDevices::dev.off()
-  saved <- c(saved, outfile5)
-
-  # ── Figure 6: Basic Metal Products ─────────────────────────────
-  sel_metals <- .select_extremes(
-    risk_data, "Manufacturing of Basic Metal Products", countries
-  )
-
-  outfile6 <- file.path(output_dir, "Figure_6.png")
-  grDevices::png(outfile6, width = 1800, height = 1800, res = 150)
-  graphics::par(mfrow = c(2, 2))
-  for (i in seq_len(nrow(sel_metals))) {
-    r <- sel_metals[i, ]
-    caption <- sprintf(
-      "%s (%s)\nBasic Metal Products\n%s risk (Risk = %.2f)",
-      r$NUTS_Name, r$Country_ID, r$Risk_Position, r$Risk_norm
-    )
-    .plot_one_radar(r, radar_vars, radar_labels, caption, region_cols[i])
-  }
-  grDevices::dev.off()
-  saved <- c(saved, outfile6)
 
   invisible(saved)
 }

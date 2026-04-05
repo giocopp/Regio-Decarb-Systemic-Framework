@@ -139,23 +139,9 @@ create_employment_weights <- function(base_data_path) {
     dplyr::select(-C_geo, -sub_sum)
 
   # ── Aggregate detailed NACE to 11 macro sectors ─────────────────
+  # Uses sector_aggregation lookup table from utils.R
   df <- df |>
-    dplyr::mutate(
-      Sector_ID = dplyr::case_when(
-        nace_r2 == "C"                               ~ "C",
-        nace_r2 %in% c("C10", "C11", "C12")          ~ "C10-C12",
-        nace_r2 %in% c("C13", "C14", "C15")          ~ "C13-C15",
-        nace_r2 %in% c("C16", "C17", "C18")          ~ "C16-C18",
-        nace_r2 %in% c("C19", "C20")                  ~ "C19-C20",
-        nace_r2 %in% c("C21", "C22")                  ~ "C21-C22",
-        nace_r2 == "C23"                              ~ "C23",
-        nace_r2 == "C24"                              ~ "C24",
-        nace_r2 %in% c("C25", "C28", "C29", "C30")   ~ "C25+C28-C30",
-        nace_r2 %in% c("C26", "C27")                  ~ "C26-C27",
-        nace_r2 %in% c("C31", "C32", "C33")           ~ "C31-C33",
-        TRUE                                          ~ NA_character_
-      )
-    ) |>
+    dplyr::left_join(sector_aggregation, by = c("nace_r2" = "nace_detail")) |>
     dplyr::filter(!is.na(Sector_ID)) |>
     dplyr::group_by(geo, country, Sector_ID) |>
     dplyr::summarise(pers_employed = sum(values, na.rm = TRUE), .groups = "drop") |>
@@ -371,6 +357,12 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
     dplyr::summarise(Elec_GWh = sum(Elec_GWh, na.rm = TRUE), .groups = "drop")
 
   # ── Distribute FC_IND_NSP_E equally among unmapped sectors ─────
+  # ASSUMPTION: FC_IND_NSP_E ("not elsewhere specified" industrial electricity)
+  # is split equally among 3 subsectors with no direct Eurostat energy-balance
+  # counterpart: C21-C22 (Pharmaceutical & Plastic), C26-C27 (Electronic &
+  # Electrical), C31-C33 (Other Manufacturing & Repair). In practice,
+  # electricity intensity varies across these sectors; alternatives include
+  # employment-weighted or value-added-weighted allocation.
   nsp <- elec |>
     dplyr::filter(nrg_bal == "FC_IND_NSP_E") |>
     dplyr::select(Country_ID, NSP_GWh = Elec_GWh)
@@ -597,6 +589,154 @@ create_re_potential <- function(enspreso_path) {
       Variable     = "RE_Potential",
       Unit         = "TWh (technical potential, medium scenario)",
       Value        = round(RE_Total_TWh, 4),
+      Value_Norm   = NA_real_
+    ) |>
+    tibble::as_tibble()
+}
+
+
+# ── 8) EU Cohesion Fund Payments Per Capita ────────────────────────────────
+
+#' Compute EU Cohesion Fund payments per capita at NUTS-2 level
+#'
+#' Downloads regionalised EU payment data (ERDF + CF + ESF, 2014-2020
+#' programming period) from the Cohesion Open Data Portal, sums total
+#' payments per NUTS-2 region, divides by population from Eurostat.
+#'
+#' @param base_data_path Path to base_data_plus.xlsx (provides NUTS-2 list)
+#' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
+#'   Variable, Unit, Value
+create_cohesion_fund <- function(base_data_path) {
+
+  # ── 1. Download regionalised payment data from Cohesion Open Data ──
+  # Dataset: "Historic EU payments annual timeseries - regionalised and modelled"
+  # Socrata ID: tc55-7ysv
+  coh_url <- paste0(
+    "https://cohesiondata.ec.europa.eu/resource/tc55-7ysv.csv?",
+    "$where=programming_period='2014-2020'",
+    "%20AND%20fund%20in('ERDF','CF','ESF')",
+    "&$limit=50000"
+  )
+  coh_raw <- readr::read_csv(coh_url, show_col_types = FALSE)
+
+  # ── 2. Sum annual payments across years and funds per NUTS-2 ───────
+  coh <- coh_raw |>
+    dplyr::filter(
+      !is.na(nuts2_id),
+      nchar(nuts2_id) == 4,
+      substr(nuts2_id, 1, 2) %in% eu27
+    ) |>
+    dplyr::group_by(nuts2_id) |>
+    dplyr::summarise(
+      total_payments = sum(as.numeric(eu_payment_annual), na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # ── 3. NUTS-2013 -> NUTS-2021 recombination ────────────────────────
+  hr_remap <- coh |>
+    dplyr::filter(nuts2_id %in% c("HR02", "HR05", "HR06")) |>
+    dplyr::summarise(total_payments = sum(total_payments, na.rm = TRUE)) |>
+    dplyr::mutate(nuts2_id = "HR04")
+
+  nl_remap <- coh |>
+    dplyr::filter(nuts2_id %in% c("NL35", "NL36")) |>
+    dplyr::mutate(nuts2_id = dplyr::case_when(
+      nuts2_id == "NL35" ~ "NL31",
+      nuts2_id == "NL36" ~ "NL33"
+    ))
+
+  pt_remap <- coh |>
+    dplyr::filter(nuts2_id %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
+    dplyr::mutate(target = dplyr::case_when(
+      nuts2_id %in% c("PT19", "PT1D") ~ "PT16",
+      nuts2_id %in% c("PT1A", "PT1B") ~ "PT17",
+      nuts2_id == "PT1C"              ~ "PT18"
+    )) |>
+    dplyr::group_by(target) |>
+    dplyr::summarise(total_payments = sum(total_payments, na.rm = TRUE),
+                     .groups = "drop") |>
+    dplyr::rename(nuts2_id = target)
+
+  obsolete_nuts <- c("HR02", "HR05", "HR06", "NL35", "NL36",
+                     "PT19", "PT1A", "PT1B", "PT1C", "PT1D")
+  coh <- coh |>
+    dplyr::filter(!nuts2_id %in% obsolete_nuts) |>
+    dplyr::bind_rows(hr_remap, nl_remap, pt_remap) |>
+    dplyr::group_by(nuts2_id) |>
+    dplyr::summarise(total_payments = sum(total_payments, na.rm = TRUE),
+                     .groups = "drop")
+
+  # ── 4. Download NUTS-2 population from Eurostat ────────────────────
+  pop_raw <- restatapi::get_eurostat_data(
+    id          = "demo_r_d2jan",
+    filters     = list(sex = "T", age = "TOTAL"),
+    date_filter = 2020,
+    exact_match = FALSE,
+    label       = FALSE
+  )
+
+  pop <- pop_raw |>
+    dplyr::mutate(geo = as.character(geo)) |>
+    dplyr::filter(nchar(geo) == 4, substr(geo, 1, 2) %in% eu27) |>
+    dplyr::transmute(nuts2_id = geo, population = as.numeric(values))
+
+  # Apply same NUTS recombination to population
+  pop_hr <- pop |>
+    dplyr::filter(nuts2_id %in% c("HR02", "HR05", "HR06")) |>
+    dplyr::summarise(population = sum(population, na.rm = TRUE)) |>
+    dplyr::mutate(nuts2_id = "HR04")
+
+  pop_nl <- pop |>
+    dplyr::filter(nuts2_id %in% c("NL35", "NL36")) |>
+    dplyr::mutate(nuts2_id = dplyr::case_when(
+      nuts2_id == "NL35" ~ "NL31",
+      nuts2_id == "NL36" ~ "NL33"
+    ))
+
+  pop_pt <- pop |>
+    dplyr::filter(nuts2_id %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
+    dplyr::mutate(target = dplyr::case_when(
+      nuts2_id %in% c("PT19", "PT1D") ~ "PT16",
+      nuts2_id %in% c("PT1A", "PT1B") ~ "PT17",
+      nuts2_id == "PT1C"              ~ "PT18"
+    )) |>
+    dplyr::group_by(target) |>
+    dplyr::summarise(population = sum(population, na.rm = TRUE),
+                     .groups = "drop") |>
+    dplyr::rename(nuts2_id = target)
+
+  pop <- pop |>
+    dplyr::filter(!nuts2_id %in% obsolete_nuts) |>
+    dplyr::bind_rows(pop_hr, pop_nl, pop_pt) |>
+    dplyr::group_by(nuts2_id) |>
+    dplyr::summarise(population = sum(population, na.rm = TRUE),
+                     .groups = "drop")
+
+  # ── 5. Per-capita calculation ──────────────────────────────────────
+  result <- coh |>
+    dplyr::inner_join(pop, by = "nuts2_id") |>
+    dplyr::mutate(per_capita = total_payments / population) |>
+    dplyr::filter(!is.na(per_capita), is.finite(per_capita))
+
+  # ── 6. Filter to valid NUTS-2 regions from base data ───────────────
+  nuts2_valid <- readxl::read_xlsx(base_data_path) |>
+    dplyr::filter(nchar(NUTS_ID) == 4) |>
+    dplyr::pull(NUTS_ID)
+
+  result |>
+    dplyr::filter(nuts2_id %in% nuts2_valid) |>
+    dplyr::transmute(
+      Country_CD   = substr(nuts2_id, 1, 2),
+      Country_Name = NA_character_,
+      NUTS_ID      = nuts2_id,
+      NUTS_Name    = NA_character_,
+      Sector_CD    = NA_character_,
+      Sector_ID    = NA_character_,
+      Component    = "Vulnerability",
+      Dimension    = "Finance",
+      Variable     = "Cohesion_Fund",
+      Unit         = "EUR per capita (2014-2020 total, ERDF+CF+ESF)",
+      Value        = round(per_capita, 2),
       Value_Norm   = NA_real_
     ) |>
     tibble::as_tibble()

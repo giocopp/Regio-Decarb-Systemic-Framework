@@ -2,11 +2,8 @@
 #
 # Exported function:
 #   normalize_indicators()
-
-
-library(dplyr)
-library(tidyr)
-library(readxl)
+#
+# Packages loaded via tar_option_set() in _targets.R
 
 # ── normalize_indicators() ──────────────────────────────────────────────────
 
@@ -72,10 +69,12 @@ normalize_indicators <- function(data_long, empl_weights) {
               .groups = "drop") |>
     rename(NUTS_ID = target)
 
-  empl_data <- bind_rows(empl_data, hr04_empl, nl_remap, pt_remap) |>
-    group_by(NUTS_ID, Sector_ID) |>
-    slice_max(pers_employed, n = 1, with_ties = FALSE) |>
-    ungroup()
+  # Remove obsolete NUTS codes before binding aggregated replacements
+  obsolete_nuts <- c("HR02", "HR05", "HR06", "NL35", "NL36",
+                     "PT19", "PT1A", "PT1B", "PT1C", "PT1D")
+  empl_data <- empl_data |>
+    filter(!NUTS_ID %in% obsolete_nuts) |>
+    bind_rows(hr04_empl, nl_remap, pt_remap)
 
   # ── 3. Join employment counts & divide intensive indicators ──
   # Note: GHG_Emissions, Scope2_Emissions, and Energy_Consumption are already
@@ -114,6 +113,20 @@ normalize_indicators <- function(data_long, empl_weights) {
         Notes
       )
     )
+
+  # ── 3b. Winsorize GFCF at 95th percentile (by sector) ──
+  # Caps the Ireland outlier (multinational profit-shifting inflates GFCF).
+  # Following OECD/JRC Handbook on Constructing Composite Indicators (2008).
+  data_ready <- data_ready |>
+    group_by(Sector_ID) |>
+    mutate(
+      Value = if_else(
+        Indicator == "Gross_Fixed_Capital_Formation",
+        winsorize_upper(Value, p = 0.95),
+        Value
+      )
+    ) |>
+    ungroup()
 
   # ── 4. Min-max normalise to [0.01, 0.99] by Indicator x Sector_ID ──
   positive_indicators <- c(

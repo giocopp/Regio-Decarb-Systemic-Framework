@@ -133,7 +133,41 @@ run_sensitivity <- function(risk_data) {
                             spearman_rho = round(rho_agg, 4))
 
   # ════════════════════════════════════════════════════════════════
+  # E. Z-SCORE NORMALIZATION
+  # ════════════════════════════════════════════════════════════════
+  zscore <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+
+  z_data <- risk_data |>
+    dplyr::filter(!is.na(Risk_norm)) |>
+    dplyr::group_by(Sector_ID) |>
+    dplyr::mutate(dplyr::across(
+      dplyr::all_of(c("Exposure", vuln_cols)), zscore
+    )) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(
+      Vulnerability_Z = rowMeans(
+        dplyr::pick(dplyr::all_of(vuln_cols)), na.rm = TRUE
+      )
+    ) |>
+    dplyr::group_by(Sector_ID) |>
+    dplyr::mutate(
+      Vulnerability_Z = range01(Vulnerability_Z),
+      Exposure_Z      = range01(Exposure)
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(Risk_Z = compute_tri(Exposure_Z, Vulnerability_Z, 0.5)) |>
+    dplyr::group_by(Sector_ID) |>
+    dplyr::mutate(Risk_Z_norm = range01(Risk_Z)) |>
+    dplyr::ungroup()
+
+  rho_z <- cor(z_data$Risk_norm, z_data$Risk_Z_norm,
+               use = "pairwise.complete.obs", method = "spearman")
+
+  zscore_row <- tibble::tibble(test = "Z-score normalization",
+                               spearman_rho = round(rho_z, 4))
+
+  # ════════════════════════════════════════════════════════════════
   # COMBINE
   # ════════════════════════════════════════════════════════════════
-  dplyr::bind_rows(alpha_results, pca_row, loo_results, agg_row)
+  dplyr::bind_rows(alpha_results, pca_row, loo_results, agg_row, zscore_row)
 }

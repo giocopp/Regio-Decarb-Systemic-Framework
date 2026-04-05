@@ -2,10 +2,8 @@
 #
 # Exported function:
 #   reshape_to_grid()
-
-
-library(dplyr)
-library(tidyr)
+#
+# Packages loaded via tar_option_set() in _targets.R
 
 # ── reshape_to_grid() ───────────────────────────────────────────────────────
 
@@ -133,7 +131,7 @@ reshape_to_grid <- function(all_data_long, agg_rules) {
     target_id       = "HR04",
     target_name     = "Continentalna Hrvatska",
     copy_from       = "HR03",
-    copy_indicators = c("Unemployment_Rate", "Wage_Per_h", "Capital_Stock_Based_Prod")
+    copy_indicators = c("Unemployment_Rate", "Capital_Stock_Based_Prod")
   )
 
   grid <- rows_upsert(grid, hr04_new,

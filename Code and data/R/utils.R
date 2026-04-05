@@ -12,6 +12,16 @@ range01 <- function(x) {
   scaled
 }
 
+#' Winsorize at upper percentile (cap outliers)
+#'
+#' @param x Numeric vector
+#' @param p Upper percentile threshold (default 0.95)
+#' @return Numeric vector with values above the p-th percentile capped
+winsorize_upper <- function(x, p = 0.95) {
+  cap <- quantile(x, probs = p, na.rm = TRUE)
+  pmin(x, cap)
+}
+
 #' Impute NA values with country x sector median
 #'
 #' @param df Data frame with Country_ID and Sector_ID columns
@@ -93,10 +103,10 @@ agg_rules <- tibble::tribble(
   "Renewables_Share",                "mean",
   "Capital_Stock_Based_Prod",        "mean",
   "Gross_Fixed_Capital_Formation",   "sum",
+  "Cohesion_Fund",                   "mean",
   "Highly_Skilled_Workers",          "mean",
   "Labour_Market_Slack",             "mean",
   "Unemployment_Rate",               "mean",
-  "Wage_Per_h",                      "mean",
   "Export_ExtraEU",                  "sum",
   "Import_ExtraEU",                  "sum",
   "BERD",                            "mean",
@@ -108,8 +118,19 @@ agg_rules <- tibble::tribble(
   "RE_Potential",                    "mean",
   "Share_of_Employment",             "mean",
   "Intangible_Investments",          "sum",
-  "Tangible_Investments",            "sum",
-  "Accountability",                  "mean",
-  "Corruption",                      "mean",
-  "Impartiality",                    "mean"
+  "Tangible_Investments",            "sum"
 )
+
+#' Validate that all file paths exist; stop with informative error if not
+#'
+#' @param paths Character vector of file paths
+#' @return paths (invisibly), or stops with an error listing missing files
+validate_files <- function(paths) {
+  missing <- paths[!file.exists(paths)]
+  if (length(missing) > 0) {
+    stop("Missing input files:\n",
+         paste("  -", missing, collapse = "\n"),
+         call. = FALSE)
+  }
+  paths
+}
