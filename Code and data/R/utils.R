@@ -58,6 +58,17 @@ iso3_to_iso2 <- tibble::tribble(
   "ESP", "ES", "SWE", "SE"
 )
 
+#' EU-27 country full names (keyed by Eurostat 2-letter codes; EL=Greece)
+country_names <- c(
+  AT = "Austria",  BE = "Belgium",  BG = "Bulgaria", HR = "Croatia",
+  CY = "Cyprus",   CZ = "Czechia",  DK = "Denmark",  EE = "Estonia",
+  FI = "Finland",  FR = "France",   DE = "Germany",  EL = "Greece",
+  HU = "Hungary",  IE = "Ireland",  IT = "Italy",    LV = "Latvia",
+  LT = "Lithuania",LU = "Luxembourg", MT = "Malta",  NL = "Netherlands",
+  PL = "Poland",   PT = "Portugal", RO = "Romania",  SK = "Slovakia",
+  SI = "Slovenia", ES = "Spain",    SE = "Sweden"
+)
+
 #' Sector name lookup
 sector_name_map <- c(
   "C"           = "Total Manufacturing",
@@ -69,7 +80,8 @@ sector_name_map <- c(
   "C23"         = "Manufacturing of Non Metallic Mineral Products",
   "C24"         = "Manufacturing of Basic Metal Products",
   "C26-C27"     = "Manufacturing of Electronic and Electrical Products",
-  "C25+C28-C30" = "Manufacturing of Fabricated Metal Products, Machinery, Vehicles and Transport Equipment",
+  "C25+C28"     = "Manufacturing of Fabricated Metal Products and Machinery",
+  "C29-C30"     = "Manufacturing of Motor Vehicles and Transport Equipment",
   "C31-C33"     = "Other Manufacturing and Repairing"
 )
 
@@ -84,7 +96,8 @@ sector_aggregation <- tibble::tribble(
   "C21",  "C21-C22", "C22", "C21-C22",
   "C23",  "C23",
   "C24",  "C24",
-  "C25",  "C25+C28-C30", "C28", "C25+C28-C30", "C29", "C25+C28-C30", "C30", "C25+C28-C30",
+  "C25",  "C25+C28", "C28", "C25+C28",
+  "C29",  "C29-C30", "C30", "C29-C30",
   "C26",  "C26-C27", "C27", "C26-C27",
   "C31",  "C31-C33", "C32", "C31-C33", "C33", "C31-C33"
 )
@@ -98,6 +111,7 @@ agg_rules <- tibble::tribble(
   ~Indicator,                        ~agg_fun,
   "GHG_Emissions",                   "sum",
   "Scope2_Emissions",                "sum",
+  "Scope3_Emissions",                "sum",
   "Energy_Consumption",              "sum",
   "Fossil_Share",                    "mean",
   "Renewables_Share",                "mean",

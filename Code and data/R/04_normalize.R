@@ -77,11 +77,11 @@ normalize_indicators <- function(data_long, empl_weights) {
     bind_rows(hr04_empl, nl_remap, pt_remap)
 
   # ── 3. Join employment counts & divide intensive indicators ──
-  # Note: GHG_Emissions, Scope2_Emissions, and Energy_Consumption are already
-
-  # downscaled to regions via employment weights in the Create scripts.
-  # Dividing again by pers_employed would double-count and inflate small regions.
-  # Only divide indicators that are NOT already employment-weighted.
+  # Note: GHG_Emissions, Scope2_Emissions, Scope3_Emissions, and
+  # Energy_Consumption are already downscaled to regions via employment
+  # weights in the Create scripts. Dividing again by pers_employed would
+  # double-count and inflate small regions. Only divide indicators that
+  # are NOT already employment-weighted.
   to_per_empl <- c("Gross_Fixed_Capital_Formation", "BERD")
 
   data_ready <- data_ready |>
@@ -128,33 +128,52 @@ normalize_indicators <- function(data_long, empl_weights) {
     ) |>
     ungroup()
 
-  # ── 4. Min-max normalise to [0.01, 0.99] by Indicator x Sector_ID ──
+  # ── 4. Min-max normalise to [0.01, 0.99] ──────────────────────
+  # Most indicators are normalised WITHIN (Indicator, Sector_ID) so each
+  # sector's regional ranking is comparable. Policy_Pressure is a
+  # sector-level constant (every NUTS-2 region in sector S has the same
+  # raw value), so within-sector grouping collapses min == max and
+  # destroys the signal. We therefore normalise Policy_Pressure across
+  # all (Sector x NUTS-2) values together (group_by Indicator only).
+  # NA values propagate as NA (case_when's first branch).
   positive_indicators <- c(
-    "GHG_Emissions", "Scope2_Emissions", "Policy_Pressure",
+    "GHG_Emissions", "Scope2_Emissions", "Scope3_Emissions", "Policy_Pressure",
     "Energy_Consumption", "Fossil_Share",
     "Unemployment_Rate", "Labour_Market_Slack",
     "Export_ExtraEU", "Import_ExtraEU",
     "HHI_Employment"
   )
 
-  data_long_norm <- data_ready |>
-    group_by(Indicator, Sector_ID) |>
-    mutate(
-      min_val = min(Value, na.rm = TRUE),
-      max_val = max(Value, na.rm = TRUE),
-      norm0_1 = if_else(
-        max_val - min_val == 0,
-        0.5,
-        (Value - min_val) / (max_val - min_val)
-      ),
-      Value_N = case_when(
-        Indicator == "GHG_Emissions" & Value == 0 ~ 0.00,
-        Value == min_val                          ~ 0.01,
-        Value == max_val                          ~ 0.99,
-        TRUE                                      ~ 0.01 + norm0_1 * 0.98
-      )
-    ) |>
-    ungroup() |>
+  pp_data    <- data_ready |> filter(Indicator == "Policy_Pressure")
+  other_data <- data_ready |> filter(Indicator != "Policy_Pressure")
+
+  .compute_value_n <- function(df, group_vars) {
+    df |>
+      group_by(across(all_of(group_vars))) |>
+      mutate(
+        min_val = min(Value, na.rm = TRUE),
+        max_val = max(Value, na.rm = TRUE),
+        norm0_1 = if_else(
+          max_val - min_val == 0,
+          0.5,
+          (Value - min_val) / (max_val - min_val)
+        ),
+        Value_N = case_when(
+          is.na(Value)                              ~ NA_real_,
+          max_val - min_val == 0                    ~ 0.5,
+          Indicator == "GHG_Emissions" & Value == 0 ~ 0.00,
+          Value == min_val                          ~ 0.01,
+          Value == max_val                          ~ 0.99,
+          TRUE                                      ~ 0.01 + norm0_1 * 0.98
+        )
+      ) |>
+      ungroup()
+  }
+
+  pp_norm    <- .compute_value_n(pp_data,    c("Indicator"))
+  other_norm <- .compute_value_n(other_data, c("Indicator", "Sector_ID"))
+
+  data_long_norm <- bind_rows(pp_norm, other_norm) |>
     # 5. Reverse negative indicators (higher raw value = lower vulnerability)
     mutate(
       Value_N = if_else(Indicator %in% positive_indicators, Value_N, 1 - Value_N),

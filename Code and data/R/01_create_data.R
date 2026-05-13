@@ -187,6 +187,48 @@ create_employment_weights <- function(base_data_path) {
 }
 
 
+# ── 1b) Write EMPL_Region.xlsx from empl_weights target ─────────────────────
+
+#' Materialise the empl_weights tibble as EMPL_Region.xlsx
+#'
+#' EMPL_Region.xlsx is used as input by create_hhi(), create_scope2() and
+#' create_scope3() for downscaling. We rebuild it from the in-memory
+#' empl_weights target so its sector grouping always matches the current
+#' sector_aggregation lookup (e.g. C25+C28 vs C29-C30 after the split).
+#'
+#' Output format (mirrors the original file produced outside the pipeline):
+#'   NUTS_ID, Sector_ID, Sector_Name, Dimension, Indicator, Unit, Value
+#'   where Value = within-NUTS-2 share of manufacturing employment (sums to 1
+#'   per NUTS_ID across the 10 sub-sectors; the aggregate "C" is excluded).
+#'
+#' @param empl_weights tibble from create_employment_weights()
+#' @param out_path     destination path (will overwrite)
+#' @return out_path
+write_empl_region_xlsx <- function(empl_weights, out_path) {
+
+  df <- empl_weights |>
+    dplyr::filter(Sector_ID != "C", !is.na(pers_employed)) |>
+    dplyr::group_by(NUTS_ID) |>
+    dplyr::mutate(
+      total = sum(pers_employed, na.rm = TRUE),
+      Value = dplyr::if_else(total > 0, pers_employed / total, NA_real_)
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::transmute(
+      NUTS_ID,
+      Sector_ID,
+      Sector_Name = sector_name_map[Sector_ID],
+      Dimension   = "Labor",
+      Indicator   = "Share_of_Employment",
+      Unit        = "Percentage",
+      Value       = round(Value, 6)
+    )
+
+  writexl::write_xlsx(df, out_path)
+  out_path
+}
+
+
 # ── 2) Diversification HHI ──────────────────────────────────────────────────
 
 #' Compute Herfindahl-Hirschman Index of manufacturing employment concentration
@@ -247,15 +289,15 @@ create_policy_pressure <- function(base_data_path) {
   policy_data <- tibble::tibble(
     Sector_ID = c(
       "C", "C10-C12", "C13-C15", "C16-C18", "C19-C20",
-      "C21-C22", "C23", "C24", "C25+C28-C30", "C26-C27", "C31-C33"
+      "C21-C22", "C23", "C24", "C25+C28", "C29-C30", "C26-C27", "C31-C33"
     ),
     ETS_Coverage = c(
       0.50, 0.25, 0.00, 0.50, 1.00,
-      0.25, 1.00, 1.00, 0.25, 0.00, 0.00
+      0.25, 1.00, 1.00, 0.25, 0.00, 0.00, 0.00
     ),
     CBAM_Coverage = c(
       0.25, 0.00, 0.00, 0.00, 0.50,
-      0.00, 1.00, 1.00, 0.00, 0.00, 0.00
+      0.00, 1.00, 1.00, 0.00, 0.00, 0.00, 0.00
     )
   ) |>
     dplyr::mutate(Policy_Pressure = (ETS_Coverage + CBAM_Coverage) / 2)
@@ -346,8 +388,8 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
     "FC_IND_IS_E",   "C24",
     "FC_IND_NFM_E",  "C24",
     "FC_IND_NMM_E",  "C23",
-    "FC_IND_MAC_E",  "C25+C28-C30",
-    "FC_IND_TE_E",   "C25+C28-C30",
+    "FC_IND_MAC_E",  "C25+C28",
+    "FC_IND_TE_E",   "C29-C30",
     "FC_IND_E",      "C"
   )
 
@@ -422,6 +464,230 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
       NUTS_ID    = NUTS_ID,
       Sector_ID  = Sector_ID,
       Indicator  = "Scope2_Emissions",
+      Unit       = "tCO2eq",
+      Value      = round(Value, 2)
+    ) |>
+    tibble::as_tibble()
+}
+
+
+# ── 4b) Scope 3 Emissions (Producer-side MRIO upstream) ─────────────────────
+
+#' Compute producer-side upstream Scope 3 GHG emissions via FIGARO MRIO
+#'
+#' Implements the standard MRIO Leontief approach to Scope 3 emissions:
+#' for each (country, industry), traces all upstream supply-chain emissions
+#' attributable to that sector's production, summed across all upstream
+#' tiers (cradle-to-gate). Electricity (NACE D35) is excluded from the
+#' upstream multiplier so it does not double-count with the separate
+#' Scope 2 indicator.
+#'
+#' Method:
+#'   Z   = inter-country intermediate flow matrix (50 regions x 64 NACE)
+#'   x   = total output by (region, industry) = rowSum(Z) + final demand
+#'   A   = Z * diag(1/x)              direct requirements
+#'   L   = (I - A)^{-1}               Leontief inverse
+#'   f   = Scope 1 emissions / output, with f[D35] = 0 (Scope 2 boundary)
+#'   m_j = sum over i of f[i] * (L[i,j] - delta_{i,j})    (upstream multiplier)
+#'   Scope3_{r,j} = m_j * x_j         (tonnes CO2eq per producer cell)
+#'
+#' Data sources (both cached as RDS on first call, reused thereafter):
+#'   - FIGARO industry-by-industry IO table: Eurostat naio_10_fcp_ii4 (2022)
+#'   - FIGARO GHG emission footprints: Eurostat env_ac_ghgfp (2022),
+#'     producer-side Scope 1 derived by summing over c_dest.
+#'
+#' Regions: 49 individual countries (EU-27 + non-EU FIGARO regions) plus
+#' WRL_REST. Industries: 64 real NACE Rev. 2 sectors. Aggregated to the 11
+#' manufacturing groups used in the paper and downscaled to NUTS-2 via
+#' employment shares (same proportionality assumption as Scope 2).
+#'
+#' @param empl_shares_path Path to EMPL_Region.xlsx (employment shares for
+#'   NUTS-2 downscaling)
+#' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID, Indicator,
+#'   Unit, Value
+create_scope3 <- function(empl_shares_path) {
+
+  io_cache  <- "Initial data/Non sector data/FIGARO_naio_10_fcp_ii4_2022.rds"
+  ghg_cache <- "Initial data/Non sector data/FIGARO_env_ac_ghgfp_2022.rds"
+
+  # ── 1. Cache FIGARO IO table (one-off bulk download) ───────────
+  if (!file.exists(io_cache)) {
+    options(timeout = 600)
+    io_all <- restatapi::get_eurostat_bulk(
+      id = "naio_10_fcp_ii4", check_toc = FALSE
+    )
+    io_all <- tibble::as_tibble(io_all) |>
+      dplyr::filter(time == 2022) |>
+      dplyr::select(-time, -unit) |>
+      dplyr::mutate(values = as.numeric(values))
+    saveRDS(io_all, io_cache, compress = "xz")
+  }
+  io <- readRDS(io_cache)
+
+  # ── 2. Universe of real industries and regions ─────────────────
+  real_ind <- c(
+    "A01","A02","A03","B","C10-12","C13-15","C16","C17","C18",
+    "C19","C20","C21","C22","C23","C24","C25","C26","C27","C28",
+    "C29","C30","C31_32","C33","D35","E36","E37-39","F","G45",
+    "G46","G47","H49","H50","H51","H52","H53","I","J58","J59_60",
+    "J61","J62_63","K64","K65","K66","L","M69_70","M71","M72",
+    "M73","M74_75","N77","N78","N79","N80-82","O84","P85","Q86",
+    "Q87_88","R90-92","R93","S94","S95","S96","T","U"
+  )
+  fd_use   <- c("P3_S13","P3_S14","P3_S15","P5M","P51G")
+  regions  <- sort(setdiff(unique(io$c_orig), "DOM"))
+  stopifnot(length(real_ind) == 64, length(regions) == 50)
+
+  # ── 3. Build (region, industry) -> integer index ───────────────
+  N <- length(regions) * length(real_ind)
+  idx <- expand.grid(region = regions, ind = real_ind,
+                     stringsAsFactors = FALSE) |>
+    dplyr::mutate(k = dplyr::row_number())
+  idx$key <- paste(idx$region, idx$ind, sep = "|")
+  key_to_k <- setNames(idx$k, idx$key)
+
+  # ── 4. Sparse intermediate flow matrix Z ───────────────────────
+  Z_rows <- io |>
+    dplyr::filter(
+      c_orig != "DOM",
+      c_orig %in% regions, c_dest %in% regions,
+      ind_ava %in% real_ind, ind_use %in% real_ind,
+      !is.na(values), values > 0
+    ) |>
+    dplyr::mutate(
+      i = key_to_k[paste(c_orig, ind_ava, sep = "|")],
+      j = key_to_k[paste(c_dest, ind_use, sep = "|")]
+    )
+  Z <- Matrix::sparseMatrix(i = Z_rows$i, j = Z_rows$j,
+                            x = Z_rows$values, dims = c(N, N))
+
+  # ── 5. Total output x = rowSum(Z) + final demand ───────────────
+  fd_rows <- io |>
+    dplyr::filter(
+      c_orig != "DOM",
+      c_orig %in% regions, c_dest %in% regions,
+      ind_ava %in% real_ind, ind_use %in% fd_use, !is.na(values)
+    ) |>
+    dplyr::group_by(c_orig, ind_ava) |>
+    dplyr::summarise(fd = sum(values, na.rm = TRUE), .groups = "drop")
+
+  x_int <- Matrix::rowSums(Z)
+  fd_vec <- numeric(N)
+  fd_idx <- key_to_k[paste(fd_rows$c_orig, fd_rows$ind_ava, sep = "|")]
+  fd_vec[fd_idx] <- fd_rows$fd
+  x_tot <- x_int + fd_vec
+
+  # ── 6. A matrix and Leontief inverse L = (I - A)^{-1} ──────────
+  x_inv <- ifelse(x_tot > 0, 1 / x_tot, 0)
+  A <- as.matrix(Z %*% Matrix::Diagonal(N, x_inv))
+  L <- solve(diag(N) - A)
+
+  # ── 7. Cache producer-side emissions (chunked API download) ────
+  if (!file.exists(ghg_cache)) {
+    chunks <- split(regions, ceiling(seq_along(regions) / 10))
+    ghg_list <- list()
+    for (ci in seq_along(chunks)) {
+      d <- restatapi::get_eurostat_data(
+        id = "env_ac_ghgfp",
+        filters = list(na_item = "TOTAL",
+                       c_orig = chunks[[ci]],
+                       nace_r2 = real_ind),
+        date_filter = 2022, exact_match = TRUE, label = FALSE
+      )
+      if (!is.null(d) && nrow(d) > 0) {
+        ghg_list[[ci]] <- tibble::as_tibble(d) |>
+          dplyr::mutate(values = as.numeric(values)) |>
+          dplyr::select(c_orig, c_dest, nace_r2, values)
+      }
+    }
+    ghg_all <- dplyr::bind_rows(ghg_list)
+    saveRDS(ghg_all, ghg_cache, compress = "xz")
+  }
+  ghg <- readRDS(ghg_cache) |>
+    dplyr::filter(c_orig %in% regions, nace_r2 %in% real_ind) |>
+    dplyr::group_by(c_orig, nace_r2) |>
+    dplyr::summarise(scope1_kt = sum(values, na.rm = TRUE), .groups = "drop")
+
+  # ── 8. f = tCO2eq per MEUR output, with f[D35] := 0 ────────────
+  ghg$k <- key_to_k[paste(as.character(ghg$c_orig),
+                          as.character(ghg$nace_r2), sep = "|")]
+  ghg <- ghg |> dplyr::filter(!is.na(k))
+  emis_t <- numeric(N)
+  emis_t[ghg$k] <- ghg$scope1_kt * 1000
+  f <- ifelse(x_tot > 0, emis_t / x_tot, 0)
+  f[idx$k[idx$ind == "D35"]] <- 0     # exclude electricity (Scope 2 boundary)
+
+  # ── 9. Upstream multiplier (Scope 3 intensity per MEUR output) ─
+  m_total <- as.numeric(t(f) %*% (L - diag(N)))
+  m_own   <- f * (diag(L) - 1)         # subtract own-sector self-loop
+  m_up    <- pmax(m_total - m_own, 0)
+
+  # ── 10. Scope 3 emissions per (region, industry) ──────────────
+  scope3 <- idx |>
+    dplyr::mutate(Scope3_tCO2 = m_up * x_tot) |>
+    dplyr::select(region, ind, Scope3_tCO2)
+
+  # ── 11. Aggregate FIGARO NACE -> 11 manufacturing groups ──────
+  nace_map <- tibble::tribble(
+    ~ind,        ~Sector_ID,
+    "C10-12",    "C10-C12",
+    "C13-15",    "C13-C15",
+    "C16",       "C16-C18", "C17", "C16-C18", "C18", "C16-C18",
+    "C19",       "C19-C20", "C20", "C19-C20",
+    "C21",       "C21-C22", "C22", "C21-C22",
+    "C23",       "C23",
+    "C24",       "C24",
+    "C25",       "C25+C28", "C28", "C25+C28",
+    "C29",       "C29-C30", "C30", "C29-C30",
+    "C26",       "C26-C27", "C27", "C26-C27",
+    "C31_32",    "C31-C33", "C33", "C31-C33"
+  )
+  s3_grp <- scope3 |>
+    dplyr::inner_join(nace_map, by = "ind") |>
+    dplyr::group_by(Country_ID = region, Sector_ID) |>
+    dplyr::summarise(Scope3_tCO2 = sum(Scope3_tCO2, na.rm = TRUE),
+                     .groups = "drop")
+  s3_C <- s3_grp |>
+    dplyr::group_by(Country_ID) |>
+    dplyr::summarise(Sector_ID = "C",
+                     Scope3_tCO2 = sum(Scope3_tCO2, na.rm = TRUE),
+                     .groups = "drop")
+  s3_country <- dplyr::bind_rows(s3_grp, s3_C) |>
+    dplyr::filter(Country_ID %in% eu27)
+
+  # ── 12. Downscale to NUTS-2 via employment shares ─────────────
+  empl <- readxl::read_xlsx(empl_shares_path) |>
+    dplyr::select(NUTS_ID, Sector_ID, Share = Value) |>
+    dplyr::mutate(Country_ID = substr(NUTS_ID, 1, 2))
+
+  empl_total <- empl |>
+    dplyr::group_by(NUTS_ID) |>
+    dplyr::summarise(Total_Share = sum(Share, na.rm = TRUE), .groups = "drop")
+
+  empl_c <- empl_total |>
+    dplyr::mutate(Country_ID = substr(NUTS_ID, 1, 2), Sector_ID = "C") |>
+    dplyr::group_by(Country_ID) |>
+    dplyr::mutate(Share = Total_Share / sum(Total_Share, na.rm = TRUE)) |>
+    dplyr::ungroup() |>
+    dplyr::select(NUTS_ID, Sector_ID, Share, Country_ID)
+
+  empl_weights <- dplyr::bind_rows(
+    empl |>
+      dplyr::group_by(Country_ID, Sector_ID) |>
+      dplyr::mutate(Share = Share / sum(Share, na.rm = TRUE)) |>
+      dplyr::ungroup(),
+    empl_c
+  )
+
+  s3_country |>
+    dplyr::left_join(empl_weights, by = c("Country_ID", "Sector_ID")) |>
+    dplyr::mutate(Value = Scope3_tCO2 * Share) |>
+    dplyr::filter(!is.na(NUTS_ID), !is.na(Value)) |>
+    dplyr::transmute(
+      Country_ID = Country_ID,
+      NUTS_ID    = NUTS_ID,
+      Sector_ID  = Sector_ID,
+      Indicator  = "Scope3_Emissions",
       Unit       = "tCO2eq",
       Value      = round(Value, 2)
     ) |>

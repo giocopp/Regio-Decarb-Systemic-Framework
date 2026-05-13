@@ -26,7 +26,7 @@ tar_option_set(
   packages = c("dplyr", "tidyr", "readxl", "writexl", "stringr",
                "janitor", "purrr", "ggplot2", "sf", "giscoR",
                "RColorBrewer", "patchwork", "fmsb", "scales",
-               "restatapi", "readr")
+               "restatapi", "readr", "Matrix")
 )
 
 # ── File paths (inputs) ──────────────────────────────────────────
@@ -63,6 +63,7 @@ sector_files <- c(
   "Initial data/Sector data/ENERGY-Energy-Correct.xlsx",
   "Initial data/Sector data/EMPL_Region.xlsx",
   "Initial data/Sector data/EXP-Scope2_Emissions.xlsx",
+  "Initial data/Sector data/EXP-Scope3_Emissions.xlsx",
   "Initial data/Sector data/EXP-Policy_Pressure.xlsx"
 )
 
@@ -81,9 +82,17 @@ list(
     format = "rds"
   ),
 
+  # Regenerate EMPL_Region.xlsx whenever sector aggregation changes
+  tar_target(
+    empl_region_file,
+    write_empl_region_xlsx(empl_weights,
+                           "Initial data/Sector data/EMPL_Region.xlsx"),
+    format = "file"
+  ),
+
   tar_target(
     hhi_data,
-    create_hhi(path$empl_shares)
+    { force(empl_region_file); create_hhi(path$empl_shares) }
   ),
   tar_target(
     hhi_file,
@@ -109,13 +118,26 @@ list(
 
   tar_target(
     scope2_data,
-    create_scope2(path$base_data, path$empl_shares)
+    { force(empl_region_file); create_scope2(path$base_data, path$empl_shares) }
   ),
   tar_target(
     scope2_file,
     {
       writexl::write_xlsx(scope2_data, "Initial data/Sector data/EXP-Scope2_Emissions.xlsx")
       "Initial data/Sector data/EXP-Scope2_Emissions.xlsx"
+    },
+    format = "file"
+  ),
+
+  tar_target(
+    scope3_data,
+    { force(empl_region_file); create_scope3(path$empl_shares) }
+  ),
+  tar_target(
+    scope3_file,
+    {
+      writexl::write_xlsx(scope3_data, "Initial data/Sector data/EXP-Scope3_Emissions.xlsx")
+      "Initial data/Sector data/EXP-Scope3_Emissions.xlsx"
     },
     format = "file"
   ),
@@ -190,10 +212,11 @@ list(
   tar_target(
     sector_data,
     {
-      force(scope2_file); force(policy_pressure_file)
+      force(scope2_file); force(scope3_file); force(policy_pressure_file)
       harmonize_sector(
         file_paths = validate_files(sector_files),
-        non_sector_data = non_sector_data
+        non_sector_data = non_sector_data,
+        empl_weights = empl_weights
       )
     }
   ),
@@ -267,6 +290,52 @@ list(
       writexl::write_xlsx(sensitivity_results, "Final data/Sensitivity_Analysis.xlsx")
       "Final data/Sensitivity_Analysis.xlsx"
     },
+    format = "file"
+  ),
+
+  # ── Phase 9: Insights (tables + extra figures) ────────────────
+  tar_target(
+    top_bottom_table,
+    build_top_bottom_table(risk_data, k = 5)
+  ),
+
+  tar_target(
+    save_top_bottom_xlsx,
+    {
+      writexl::write_xlsx(top_bottom_table,
+                          "Final data/Top_Bottom_Regions_per_Sector.xlsx")
+      "Final data/Top_Bottom_Regions_per_Sector.xlsx"
+    },
+    format = "file"
+  ),
+
+  tar_target(
+    figure_decomposition,
+    plot_risk_decomposition(risk_data, output_dir = "Figures",
+                            sectors = c("C", "C24", "C25+C28", "C29-C30",
+                                        "C19-C20", "C23")),
+    format = "file"
+  ),
+
+  tar_target(
+    figure_quadrants,
+    plot_quadrant(risk_data, output_dir = "Figures",
+                  sectors = c("C", "C24", "C25+C28", "C29-C30", "C19-C20", "C23")),
+    format = "file"
+  ),
+
+  tar_target(
+    figure_within_country,
+    plot_within_country_var(risk_data, output_dir = "Figures",
+                            sectors = c("C", "C24", "C25+C28", "C29-C30")),
+    format = "file"
+  ),
+
+  tar_target(
+    figure_cluster_maps,
+    plot_sector_cluster_maps(risk_data, output_dir = "Figures",
+                             sectors = c("C24", "C25+C28", "C29-C30",
+                                         "C19-C20", "C23")),
     format = "file"
   )
 )

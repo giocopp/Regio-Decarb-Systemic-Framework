@@ -25,6 +25,78 @@
   )
 }
 
+#' Split legacy "C25+C28-C30" rows into "C25+C28" and "C29-C30"
+#'
+#' Several pre-pipeline static xlsx files (Scope 1 emissions, energy,
+#' BERD, trade) were prepared with the old aggregate sector
+#' "C25+C28-C30". After the split, we need values for the two new
+#' sectors. We allocate using the NUTS-2 employment share of each new
+#' sector within the original aggregate:
+#'   - Sum-rule indicators (GHG, Scope2/3, Energy, Imports, Exports):
+#'     Value is multiplied by the per-NUTS-2 share.
+#'   - Mean-rule indicators (Fossil_Share, Renewables_Share, BERD):
+#'     Value is duplicated to both new sectors.
+#' Determination of sum vs mean uses agg_rules in utils.R.
+#'
+#' @param sector_data harmonised long tibble (post indicator-rename)
+#' @param empl_weights tibble with C25+C28 and C29-C30 employment counts
+#' @return sector_data with C25+C28-C30 rows replaced by the two splits
+.split_C25_C28_C30 <- function(sector_data, empl_weights) {
+
+  to_split <- sector_data |>
+    dplyr::filter(Sector_ID == "C25+C28-C30")
+  if (nrow(to_split) == 0) return(sector_data)
+
+  ew_split <- empl_weights |>
+    dplyr::filter(Sector_ID %in% c("C25+C28", "C29-C30")) |>
+    dplyr::select(NUTS_ID, Sector_ID, pers_employed) |>
+    tidyr::pivot_wider(names_from = Sector_ID,
+                       values_from = pers_employed,
+                       values_fill = 0) |>
+    dplyr::rename(emp_C25C28 = `C25+C28`,
+                  emp_C29C30 = `C29-C30`) |>
+    dplyr::mutate(
+      total = emp_C25C28 + emp_C29C30,
+      share_C25C28 = dplyr::if_else(total > 0, emp_C25C28 / total, 0.5),
+      share_C29C30 = dplyr::if_else(total > 0, emp_C29C30 / total, 0.5)
+    ) |>
+    dplyr::select(NUTS_ID, share_C25C28, share_C29C30)
+
+  to_split <- to_split |>
+    dplyr::left_join(agg_rules, by = "Indicator") |>
+    dplyr::mutate(agg_fun = dplyr::coalesce(agg_fun, "mean")) |>
+    dplyr::left_join(ew_split, by = "NUTS_ID") |>
+    dplyr::mutate(
+      share_C25C28 = dplyr::coalesce(share_C25C28, 0.5),
+      share_C29C30 = dplyr::coalesce(share_C29C30, 0.5)
+    )
+
+  new_C25 <- to_split |>
+    dplyr::mutate(
+      Value     = dplyr::if_else(agg_fun == "sum",
+                                  Value * share_C25C28, Value),
+      Sector_ID = "C25+C28",
+      Sector_Name = sector_name_map["C25+C28"]
+    )
+
+  new_C29 <- to_split |>
+    dplyr::mutate(
+      Value     = dplyr::if_else(agg_fun == "sum",
+                                  Value * share_C29C30, Value),
+      Sector_ID = "C29-C30",
+      Sector_Name = sector_name_map["C29-C30"]
+    )
+
+  drop_cols <- c("agg_fun", "share_C25C28", "share_C29C30")
+  new_C25 <- new_C25 |> dplyr::select(-dplyr::any_of(drop_cols))
+  new_C29 <- new_C29 |> dplyr::select(-dplyr::any_of(drop_cols))
+
+  sector_data |>
+    dplyr::filter(Sector_ID != "C25+C28-C30") |>
+    dplyr::bind_rows(new_C25, new_C29)
+}
+
+
 #' Pick the first column whose name matches a regex, or return NA
 .pick_col <- function(df, pattern) {
   hits <- names(df)[grepl(pattern, names(df), ignore.case = TRUE)]
@@ -183,8 +255,11 @@ harmonize_non_sector <- function(file_paths, base_data_path) {
 #' @param file_paths Character vector of full paths to sector xlsx files.
 #' @param non_sector_data Tibble produced by harmonize_non_sector() (used for
 #'   region lookup and NUTS_Name fill).
+#' @param empl_weights Tibble from create_employment_weights() — used by
+#'   .split_C25_C28_C30() to allocate legacy aggregate values to the two
+#'   new C25+C28 and C29-C30 sectors.
 #' @return Tibble with the same 11 columns as non_sector_data.
-harmonize_sector <- function(file_paths, non_sector_data) {
+harmonize_sector <- function(file_paths, non_sector_data, empl_weights) {
 
   read_one <- function(file_path) {
 
@@ -273,6 +348,7 @@ harmonize_sector <- function(file_paths, non_sector_data) {
       Indicator == "Import"            ~ "Import_ExtraEU",
       Indicator == "Export"            ~ "Export_ExtraEU",
       Indicator == "Scope2_Emissions"  ~ "Scope2_Emissions",
+      Indicator == "Scope3_Emissions"  ~ "Scope3_Emissions",
       Indicator == "Policy_Pressure"   ~ "Policy_Pressure",
       TRUE                             ~ Indicator
     ))
@@ -281,7 +357,8 @@ harmonize_sector <- function(file_paths, non_sector_data) {
   sector_data <- sector_data |>
     mutate(
       Component = if_else(
-        Indicator %in% c("GHG_Emissions", "Scope2_Emissions", "Policy_Pressure"),
+        Indicator %in% c("GHG_Emissions", "Scope2_Emissions",
+                         "Scope3_Emissions", "Policy_Pressure"),
         "Exposure", "Vulnerability"
       ),
       Dimension = case_when(
@@ -289,7 +366,7 @@ harmonize_sector <- function(file_paths, non_sector_data) {
         Indicator %in% c("Tangible_Investments",
                          "Intangible_Investments")                 ~ "Finance",
         Indicator %in% c("GHG_Emissions", "Scope2_Emissions",
-                         "Policy_Pressure")                        ~ "Exposure",
+                         "Scope3_Emissions", "Policy_Pressure")    ~ "Exposure",
         Indicator %in% c("Import_ExtraEU", "Export_ExtraEU")       ~ "Supply_Chain",
         Indicator == "BERD"                                        ~ "Technology",
         Indicator %in% c("Energy_Consumption", "Fossil_Share",
@@ -297,6 +374,9 @@ harmonize_sector <- function(file_paths, non_sector_data) {
         TRUE                                                       ~ NA_character_
       )
     )
+
+  # ── split legacy C25+C28-C30 rows into C25+C28 and C29-C30 ──
+  sector_data <- .split_C25_C28_C30(sector_data, empl_weights)
 
   tibble::as_tibble(sector_data)
 }
@@ -353,7 +433,8 @@ combine_all <- function(sector_data, non_sector_data) {
         Indicator == "Energy_Consumption"                             ~ "Energy",
         Indicator %in% c("HHI_Employment", "RE_Potential")           ~ "Diversification",
         Indicator %in% c("QoG_Index", "Climate_Mitigation_Laws")     ~ "Institutions",
-        Indicator %in% c("Scope2_Emissions", "Policy_Pressure")      ~ "Exposure",
+        Indicator %in% c("Scope2_Emissions", "Scope3_Emissions",
+                         "Policy_Pressure")                          ~ "Exposure",
         TRUE                                                          ~ Dimension
       )
     )

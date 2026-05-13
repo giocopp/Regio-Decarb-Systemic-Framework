@@ -13,7 +13,8 @@
 aggregate_risk <- function(norm_wide) {
 
   # ── 1. Define indicator groups ──────────────────────────────────
-  exposure_vars <- c("GHG_Emissions", "Scope2_Emissions", "Policy_Pressure")
+  exposure_vars <- c("GHG_Emissions", "Scope2_Emissions",
+                     "Scope3_Emissions", "Policy_Pressure")
 
   dimensions <- list(
     Energy          = c("Energy_Consumption", "Fossil_Share",
