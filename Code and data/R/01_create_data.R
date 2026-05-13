@@ -28,7 +28,7 @@ create_employment_weights <- function(base_data_path) {
   )
 
 
-  # ── Download from Eurostat ──────────────────────────────────────
+  # ── Download from Eurostat (last 5 years; helper picks the best) ─
   raw <- restatapi::get_eurostat_data(
     id          = "sbs_r_nuts2021",
     filters     = list(
@@ -36,7 +36,8 @@ create_employment_weights <- function(base_data_path) {
       sizeclas  = "TOTAL",
       nace_r2   = nace_codes
     ),
-    date_filter = c(2022, 2021),
+    date_filter = seq(as.integer(format(Sys.Date(), "%Y")) - 5L,
+                      as.integer(format(Sys.Date(), "%Y"))),
     exact_match = TRUE,
     label       = FALSE,
     cflags      = TRUE,
@@ -67,23 +68,33 @@ create_employment_weights <- function(base_data_path) {
   df <- df |>
     dplyr::mutate(values = dplyr::if_else(flags == "c", NA_real_, values))
 
-  # ── Prefer 2022; if 2022 is NA but 2021 exists, fill from 2021 ─
+  # ── Pick the latest year with the broadest NUTS-2 coverage ─────
+  #    Fall back per cell to the most recent prior year when the
+  #    chosen year is NA for that (geo, sector) combination.
+  pick <- pick_latest_complete_year(
+    df |> dplyr::filter(nchar(geo) == 4, nace_r2 == "C"),
+    geo_dim = "geo", value_col = "values",
+    expected_geos = unique(base_d$geo[nchar(base_d$geo) == 4]),
+    max_years_back = 5L
+  )
+
+  # Per-cell fallback: for each (geo, nace_r2), use the most recent year with
+  # a non-NA value within the search window. This handles two cases that the
+  # legacy single-year filter dropped:
+  #   (a) row exists at pick$year but values is NA → fill from earlier year
+  #   (b) row entirely absent at pick$year (e.g. LV00 in 2023 sbs_r_nuts2021)
+  #       → take the row from the most recent prior year present
   df <- df |>
     dplyr::mutate(Year = as.integer(as.character(time))) |>
+    dplyr::filter(!is.na(values)) |>
     dplyr::group_by(geo, country, nace_r2, geo_level) |>
-    dplyr::arrange(Year, .by_group = TRUE) |>
-    dplyr::mutate(
-      values    = dplyr::if_else(
-        Year == 2022 & is.na(values),
-        values[Year == 2021][1],
-        values
-      ),
-      has2022   = any(Year == 2022),
-      pick_year = dplyr::if_else(has2022, 2022L, 2021L)
-    ) |>
+    dplyr::arrange(dplyr::desc(Year), .by_group = TRUE) |>
+    dplyr::slice(1) |>
     dplyr::ungroup() |>
-    dplyr::filter(Year == pick_year) |>
-    dplyr::select(-Year, -has2022, -pick_year)
+    dplyr::select(-Year)
+
+  attr(df, "year_selected") <- pick$year
+  attr(df, "year_coverage") <- pick$coverage
 
   # ── Impute regional NAs from country x sector median ────────────
   country_sector_median <- df |>
@@ -180,10 +191,15 @@ create_employment_weights <- function(base_data_path) {
     dplyr::ungroup() |>
     dplyr::select(-w_sum)
 
-  df |>
+  out <- df |>
     dplyr::mutate(pers_employed = round(pers_employed)) |>
     dplyr::select(Country_ID, NUTS_ID, Sector_ID, pers_employed, weight) |>
     tibble::as_tibble()
+
+  attr(out, "year_selected") <- pick$year
+  attr(out, "year_coverage") <- pick$coverage
+  attr(out, "source_dataset") <- "sbs_r_nuts2021"
+  out
 }
 
 
@@ -339,7 +355,7 @@ create_policy_pressure <- function(base_data_path) {
 #'   for regional downscaling)
 #' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID, Indicator,
 #'   Unit, Value
-create_scope2 <- function(base_data_path, empl_shares_path) {
+create_scope2 <- function(base_data_path, empl_weights) {
 
   # ── Grid emission factors (gCO2/kWh), EEA/EMBER 2022 ──────────
   grid_ef <- tibble::tribble(
@@ -352,29 +368,46 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
     "ES",  142, "SE",    8
   )
 
-  # ── Download electricity consumption by industrial subsector ───
-  elec_raw <- restatapi::get_eurostat_data(
-    id          = "nrg_bal_c",
-    filters     = list(siec = "E7000", unit = "GWH", geo = eu27),
-    date_filter = 2022,
-    exact_match = FALSE,
-    label       = FALSE,
-    cflags      = TRUE,
-    keep_flags  = TRUE
-  )
-
   ind_codes <- c(
     "FC_IND_FBT_E", "FC_IND_TL_E", "FC_IND_WP_E", "FC_IND_PPP_E",
     "FC_IND_CPC_E", "FC_IND_IS_E", "FC_IND_NFM_E", "FC_IND_NMM_E",
     "FC_IND_MAC_E", "FC_IND_TE_E", "FC_IND_NSP_E", "FC_IND_E"
   )
 
-  elec <- elec_raw |>
-    dplyr::filter(nrg_bal %in% ind_codes) |>
+  # ── Download electricity consumption (multi-year for year-picker) ─
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  elec_raw <- restatapi::get_eurostat_data(
+    id          = "nrg_bal_c",
+    filters     = list(siec = "E7000", unit = "GWH", geo = eu27,
+                       nrg_bal = ind_codes),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE,
+    label       = FALSE,
+    cflags      = TRUE,
+    keep_flags  = TRUE
+  )
+
+  elec_raw <- elec_raw |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values)) |>
+    dplyr::filter(geo %in% eu27, nrg_bal == "FC_IND_E")
+
+  pick <- pick_latest_complete_year(
+    elec_raw, geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  elec <- restatapi::get_eurostat_data(
+    id          = "nrg_bal_c",
+    filters     = list(siec = "E7000", unit = "GWH", geo = eu27,
+                       nrg_bal = ind_codes),
+    date_filter = pick$year,
+    exact_match = TRUE, label = FALSE
+  ) |>
     dplyr::mutate(
       Country_ID = as.character(geo),
       Elec_GWh   = as.numeric(values)
     ) |>
+    dplyr::filter(Country_ID %in% eu27, nrg_bal %in% ind_codes) |>
     dplyr::select(Country_ID, nrg_bal, Elec_GWh)
 
   # ── Map energy-balance codes to aggregated sectors ─────────────
@@ -425,49 +458,26 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
     dplyr::mutate(Scope2_tCO2 = Elec_GWh * Grid_EF_gCO2_kWh / 1000)
 
   # ── Downscale to NUTS-2 using employment shares ────────────────
-  empl <- readxl::read_xlsx(empl_shares_path) |>
-    dplyr::select(NUTS_ID, Sector_ID, Share = Value) |>
-    dplyr::mutate(Country_ID = substr(NUTS_ID, 1, 2))
-
-  # Sector C: allocate via total employment share across regions
-  empl_total <- empl |>
-    dplyr::group_by(NUTS_ID) |>
-    dplyr::summarise(Total_Share = sum(Share, na.rm = TRUE), .groups = "drop")
-
-  empl_c <- empl_total |>
-    dplyr::mutate(
-      Country_ID = substr(NUTS_ID, 1, 2),
-      Sector_ID  = "C"
-    ) |>
-    dplyr::group_by(Country_ID) |>
-    dplyr::mutate(Share = Total_Share / sum(Total_Share, na.rm = TRUE)) |>
-    dplyr::ungroup() |>
-    dplyr::select(NUTS_ID, Sector_ID, Share, Country_ID)
-
-  empl_weights <- dplyr::bind_rows(
-    empl |>
-      dplyr::group_by(Country_ID, Sector_ID) |>
-      dplyr::mutate(Share = Share / sum(Share, na.rm = TRUE)) |>
-      dplyr::ungroup(),
-    empl_c
+  scope2_regional <- downscale_national_to_nuts2(
+    national_df      = scope2 |> dplyr::select(Country_ID, Sector_ID, Scope2_tCO2),
+    empl_weights = empl_weights,
+    value_cols       = "Scope2_tCO2"
   )
 
-  scope2_regional <- scope2 |>
-    dplyr::select(Country_ID, Sector_ID, Scope2_tCO2) |>
-    dplyr::left_join(empl_weights, by = c("Country_ID", "Sector_ID")) |>
-    dplyr::mutate(Value = Scope2_tCO2 * Share) |>
-    dplyr::filter(!is.na(NUTS_ID), !is.na(Value))
-
-  scope2_regional |>
+  out <- scope2_regional |>
     dplyr::transmute(
       Country_ID = Country_ID,
       NUTS_ID    = NUTS_ID,
       Sector_ID  = Sector_ID,
       Indicator  = "Scope2_Emissions",
       Unit       = "tCO2eq",
-      Value      = round(Value, 2)
+      Value      = round(Scope2_tCO2, 2)
     ) |>
     tibble::as_tibble()
+
+  attr(out, "year_selected") <- pick$year
+  attr(out, "source_dataset") <- "nrg_bal_c"
+  out
 }
 
 
@@ -505,10 +515,16 @@ create_scope2 <- function(base_data_path, empl_shares_path) {
 #'   NUTS-2 downscaling)
 #' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID, Indicator,
 #'   Unit, Value
-create_scope3 <- function(empl_shares_path) {
+create_scope3 <- function(empl_weights) {
 
-  io_cache  <- "Initial data/Non sector data/FIGARO_naio_10_fcp_ii4_2022.rds"
-  ghg_cache <- "Initial data/Non sector data/FIGARO_env_ac_ghgfp_2022.rds"
+  # ── 0. Pick latest year for FIGARO tables (both must agree) ────
+  toc <- restatapi::get_eurostat_toc()
+  fig_io_end  <- toc$dataEnd[toc$code == "naio_10_fcp_ii4"][1]
+  fig_ghg_end <- toc$dataEnd[toc$code == "env_ac_ghgfp"][1]
+  figaro_year <- as.integer(min(fig_io_end, fig_ghg_end))
+
+  io_cache  <- sprintf("Initial data/Non sector data/FIGARO_naio_10_fcp_ii4_%d.rds", figaro_year)
+  ghg_cache <- sprintf("Initial data/Non sector data/FIGARO_env_ac_ghgfp_%d.rds", figaro_year)
 
   # ── 1. Cache FIGARO IO table (one-off bulk download) ───────────
   if (!file.exists(io_cache)) {
@@ -517,7 +533,7 @@ create_scope3 <- function(empl_shares_path) {
       id = "naio_10_fcp_ii4", check_toc = FALSE
     )
     io_all <- tibble::as_tibble(io_all) |>
-      dplyr::filter(time == 2022) |>
+      dplyr::filter(time == figaro_year) |>
       dplyr::select(-time, -unit) |>
       dplyr::mutate(values = as.numeric(values))
     saveRDS(io_all, io_cache, compress = "xz")
@@ -592,7 +608,7 @@ create_scope3 <- function(empl_shares_path) {
         filters = list(na_item = "TOTAL",
                        c_orig = chunks[[ci]],
                        nace_r2 = real_ind),
-        date_filter = 2022, exact_match = TRUE, label = FALSE
+        date_filter = figaro_year, exact_match = TRUE, label = FALSE
       )
       if (!is.null(d) && nrow(d) > 0) {
         ghg_list[[ci]] <- tibble::as_tibble(d) |>
@@ -656,42 +672,24 @@ create_scope3 <- function(empl_shares_path) {
     dplyr::filter(Country_ID %in% eu27)
 
   # ── 12. Downscale to NUTS-2 via employment shares ─────────────
-  empl <- readxl::read_xlsx(empl_shares_path) |>
-    dplyr::select(NUTS_ID, Sector_ID, Share = Value) |>
-    dplyr::mutate(Country_ID = substr(NUTS_ID, 1, 2))
-
-  empl_total <- empl |>
-    dplyr::group_by(NUTS_ID) |>
-    dplyr::summarise(Total_Share = sum(Share, na.rm = TRUE), .groups = "drop")
-
-  empl_c <- empl_total |>
-    dplyr::mutate(Country_ID = substr(NUTS_ID, 1, 2), Sector_ID = "C") |>
-    dplyr::group_by(Country_ID) |>
-    dplyr::mutate(Share = Total_Share / sum(Total_Share, na.rm = TRUE)) |>
-    dplyr::ungroup() |>
-    dplyr::select(NUTS_ID, Sector_ID, Share, Country_ID)
-
-  empl_weights <- dplyr::bind_rows(
-    empl |>
-      dplyr::group_by(Country_ID, Sector_ID) |>
-      dplyr::mutate(Share = Share / sum(Share, na.rm = TRUE)) |>
-      dplyr::ungroup(),
-    empl_c
-  )
-
-  s3_country |>
-    dplyr::left_join(empl_weights, by = c("Country_ID", "Sector_ID")) |>
-    dplyr::mutate(Value = Scope3_tCO2 * Share) |>
-    dplyr::filter(!is.na(NUTS_ID), !is.na(Value)) |>
+  out <- downscale_national_to_nuts2(
+    national_df      = s3_country,
+    empl_weights = empl_weights,
+    value_cols       = "Scope3_tCO2"
+  ) |>
     dplyr::transmute(
       Country_ID = Country_ID,
       NUTS_ID    = NUTS_ID,
       Sector_ID  = Sector_ID,
       Indicator  = "Scope3_Emissions",
       Unit       = "tCO2eq",
-      Value      = round(Value, 2)
+      Value      = round(Scope3_tCO2, 2)
     ) |>
     tibble::as_tibble()
+
+  attr(out, "year_selected") <- figaro_year
+  attr(out, "source_dataset") <- "naio_10_fcp_ii4 + env_ac_ghgfp"
+  out
 }
 
 
@@ -705,31 +703,75 @@ create_scope3 <- function(empl_shares_path) {
 #' @param qog_path Path to qog_eureg.csv
 #' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
 #'   Variable, Unit, Value
-create_qog <- function(qog_path) {
+create_qog <- function(qog_path, base_data_path) {
 
   qog <- readr::read_csv(qog_path, show_col_types = FALSE)
 
   # Determine latest available EQI survey year (target: 2017)
   eqi_avail <- qog |>
-    dplyr::filter(!is.na(eqi_score_nuts2)) |>
+    dplyr::filter(!is.na(eqi_score_nuts2) | !is.na(eqi_score_nuts0)) |>
     dplyr::distinct(year) |>
     dplyr::pull(year)
-
   eqi_year <- if (2017 %in% eqi_avail) 2017L else max(eqi_avail)
 
-  qog_filt <- qog |>
-    dplyr::filter(
-      year == eqi_year,
-      !is.na(eqi_score_nuts2),
-      !is.na(nuts2)
-    ) |>
-    dplyr::select(NUTS_ID = nuts2, EQI = eqi_score_nuts2)
+  # ── Pass 1: NUTS-2 EQI (16 countries with regional surveys) ────
+  qog_nuts2 <- qog |>
+    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts2),
+                  !is.na(nuts2), nchar(nuts2) == 4,
+                  substr(nuts2, 1, 2) %in% eu27) |>
+    dplyr::transmute(NUTS_ID = nuts2, EQI = eqi_score_nuts2,
+                     EQI_level = "NUTS-2")
 
-  qog_filt |>
-    dplyr::filter(
-      nchar(NUTS_ID) == 4,
-      substr(NUTS_ID, 1, 2) %in% eu27
-    ) |>
+  # ── Pass 2: NUTS-0 EQI (national fallback for missing countries) ─
+  # The qog_eureg.csv carries national EQI in the eqi_score_nuts0 column
+  # on rows where nuts2 is NA and nuts0 = country code.
+  qog_nuts0 <- qog |>
+    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts0),
+                  is.na(nuts2), nuts0 %in% eu27) |>
+    dplyr::select(Country_CD = nuts0, EQI_nat = eqi_score_nuts0)
+
+  # NUTS-2 region list per country
+  nuts2_grid <- readxl::read_xlsx(base_data_path) |>
+    dplyr::filter(nchar(NUTS_ID) == 4,
+                  substr(NUTS_ID, 1, 2) %in% eu27) |>
+    dplyr::transmute(NUTS_ID, Country_CD = substr(NUTS_ID, 1, 2))
+
+  countries_with_nuts2 <- substr(qog_nuts2$NUTS_ID, 1, 2) |> unique()
+  fallback_rows <- nuts2_grid |>
+    dplyr::filter(!Country_CD %in% countries_with_nuts2) |>
+    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
+    dplyr::transmute(NUTS_ID,
+                     EQI = EQI_nat,
+                     EQI_level = "NUTS-0 (national, replicated)")
+
+  # Pass 3: for any NUTS-2 region in base_data that still lacks an EQI value
+  # (e.g. IE04/IE05/IE06 — Ireland's EQI in qog_eureg.csv is keyed under the
+  # old NUTS-2013 codes IE01/IE02), fall back to the country's NUTS-0 EQI.
+  missing_nuts2 <- nuts2_grid |>
+    dplyr::anti_join(qog_nuts2, by = "NUTS_ID") |>
+    dplyr::anti_join(fallback_rows, by = "NUTS_ID") |>
+    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
+    dplyr::transmute(NUTS_ID, EQI = EQI_nat,
+                     EQI_level = "NUTS-0 (national, mismatched NUTS-2 codes)")
+
+  combined <- dplyr::bind_rows(qog_nuts2, fallback_rows, missing_nuts2)
+
+  # Collapse to one row per NUTS_ID with the most specific EQI level available
+  # (NUTS-2 wins over NUTS-0 fallbacks). Otherwise harmonize_non_sector's
+  # crossing by Unit duplicates rows when the same NUTS-2 has multiple
+  # fallback entries with different Unit strings.
+  level_priority <- c("NUTS-2" = 1L,
+                      "NUTS-0 (national, replicated)" = 2L,
+                      "NUTS-0 (national, mismatched NUTS-2 codes)" = 3L)
+  collapsed <- combined |>
+    dplyr::mutate(.prio = level_priority[EQI_level]) |>
+    dplyr::filter(!is.na(EQI)) |>
+    dplyr::group_by(NUTS_ID) |>
+    dplyr::slice_min(.prio, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup() |>
+    dplyr::select(-.prio)
+
+  collapsed |>
     dplyr::transmute(
       Country_CD   = substr(NUTS_ID, 1, 2),
       Country_Name = NA_character_,
@@ -742,7 +784,8 @@ create_qog <- function(qog_path) {
       Variable     = "QoG_Index",
       Unit         = "EQI Score",
       Value        = round(EQI, 6),
-      Value_Norm   = NA_real_
+      Value_Norm   = NA_real_,
+      EQI_Level    = EQI_level
     ) |>
     tibble::as_tibble()
 }
@@ -1006,4 +1049,720 @@ create_cohesion_fund <- function(base_data_path) {
       Value_Norm   = NA_real_
     ) |>
     tibble::as_tibble()
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Wave A — NUTS-2 direct Eurostat indicators (no downscaling)
+# ══════════════════════════════════════════════════════════════════════════════
+
+#' Internal helper: pull recent years from a Eurostat NUTS-2 table and
+#' return a tibble of (Country_CD, NUTS_ID, Year, Value) for the latest
+#' year with full EU-27 NUTS-2 coverage.
+.fetch_nuts2_latest <- function(id, filters, base_data_path,
+                                year_col = "time", value_col = "values",
+                                max_years_back = 5L) {
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = id,
+    filters     = filters,
+    date_filter = seq(this_yr - max_years_back, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo),
+                  values = as.numeric(values),
+                  country = substr(geo, 1, 2))
+
+  # NUTS-2 only, EU-27
+  base_d <- readxl::read_xlsx(base_data_path) |>
+    dplyr::filter(nchar(NUTS_ID) == 4) |>
+    dplyr::pull(NUTS_ID)
+
+  df <- raw |>
+    dplyr::filter(nchar(geo) == 4, country %in% eu27, geo %in% base_d)
+
+  pick <- pick_latest_complete_year(
+    df, geo_dim = "geo", value_col = value_col,
+    expected_geos = base_d, max_years_back = max_years_back
+  )
+
+  out <- df |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year) |>
+    dplyr::transmute(Country_CD = country, NUTS_ID = geo,
+                     Year = pick$year, Value = values)
+
+  attr(out, "year_selected") <- pick$year
+  attr(out, "year_coverage") <- pick$coverage
+  attr(out, "missing_geos")  <- pick$missing_geos
+  attr(out, "source_dataset") <- id
+  out
+}
+
+
+#' Create GFCF (Gross Fixed Capital Formation, NUTS-2, manufacturing) from
+#' Eurostat `nama_10r_2gfcf`.
+create_gfcf <- function(base_data_path) {
+
+  out <- .fetch_nuts2_latest(
+    id      = "nama_10r_2gfcf",
+    filters = list(nace_r2 = "C", sector = "S1", currency = "MIO_EUR"),
+    base_data_path = base_data_path
+  )
+
+  result <- out |>
+    dplyr::transmute(
+      Country_CD = Country_CD,
+      Country_Name = NA_character_,
+      NUTS_ID = NUTS_ID,
+      NUTS_Name = NA_character_,
+      Sector_CD = NA_character_,
+      Sector_ID = NA_character_,
+      Component = "Vulnerability",
+      Dimension = "Finance",
+      Variable  = "GFCF",
+      Year      = Year,
+      Source    = "Eurostat nama_10r_2gfcf",
+      Unit      = "Million euro",
+      Value     = round(Value, 2),
+      Value_Norm = NA_real_
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- attr(out, "year_selected")
+  attr(result, "source_dataset") <- attr(out, "source_dataset")
+  result
+}
+
+
+#' Create Unemployment rate (NUTS-2) from Eurostat `lfst_r_lfu3rt`.
+create_unemployment <- function(base_data_path) {
+
+  out <- .fetch_nuts2_latest(
+    id      = "lfst_r_lfu3rt",
+    filters = list(isced11 = "TOTAL", sex = "T", age = "Y20-64"),
+    base_data_path = base_data_path
+  )
+
+  result <- out |>
+    dplyr::transmute(
+      Country_CD = Country_CD,
+      Country_Name = NA_character_,
+      NUTS_ID = NUTS_ID,
+      NUTS_Name = NA_character_,
+      Sector_CD = NA_character_,
+      Sector_ID = NA_character_,
+      Component = "Vulnerability",
+      Dimension = "Labor",
+      Variable  = "Unemployment",
+      Year      = Year,
+      Source    = "Eurostat lfst_r_lfu3rt",
+      Unit      = "Percentage",
+      Value     = round(Value, 2),
+      Value_Norm = NA_real_
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- attr(out, "year_selected")
+  attr(result, "source_dataset") <- attr(out, "source_dataset")
+  result
+}
+
+
+#' Create Labour Market Slack (NUTS-2) from Eurostat `lfst_r_sla_ga`.
+create_labour_slack <- function(base_data_path) {
+
+  out <- .fetch_nuts2_latest(
+    id      = "lfst_r_sla_ga",
+    filters = list(unit = "PC_ELF", sex = "T", wstatus = "SLACK",
+                   age = "Y15-74"),
+    base_data_path = base_data_path
+  )
+
+  result <- out |>
+    dplyr::transmute(
+      Country_CD = Country_CD,
+      Country_Name = NA_character_,
+      NUTS_ID = NUTS_ID,
+      NUTS_Name = NA_character_,
+      Sector_CD = NA_character_,
+      Sector_ID = NA_character_,
+      Component = "Vulnerability",
+      Dimension = "Labor",
+      Variable  = "Labour_Market_Slack",
+      Year      = Year,
+      Source    = "Eurostat lfst_r_sla_ga",
+      Unit      = "Percentage",
+      Value     = round(Value, 2),
+      Value_Norm = NA_real_
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- attr(out, "year_selected")
+  attr(result, "source_dataset") <- attr(out, "source_dataset")
+  result
+}
+
+
+#' Create Highly Skilled Workers (HRST PC_ACT, NUTS-2) from Eurostat
+#' `hrst_st_rcat`.
+#'
+#' Note: this replaces a custom unreproducible legacy calculation with the
+#' canonical HRST PC_ACT (Human Resources in Science & Technology as a share
+#' of the active population). Values may differ ~3-6pp from the legacy xlsx;
+#' the change is documented in the cover letter to the Climate Policy editor.
+create_highly_skilled <- function(base_data_path) {
+
+  out <- .fetch_nuts2_latest(
+    id      = "hrst_st_rcat",
+    filters = list(category = "HRST", unit = "PC_ACT", sex = "T"),
+    base_data_path = base_data_path
+  )
+
+  result <- out |>
+    dplyr::transmute(
+      Country_CD = Country_CD,
+      Country_Name = NA_character_,
+      NUTS_ID = NUTS_ID,
+      NUTS_Name = NA_character_,
+      Sector_CD = NA_character_,
+      Sector_ID = NA_character_,
+      Component = "Vulnerability",
+      Dimension = "Labor",
+      Variable  = "Highly_Skilled_Workers",
+      Year      = Year,
+      Source    = "Eurostat hrst_st_rcat",
+      Unit      = "Percentage",
+      Value     = round(Value, 2),
+      Value_Norm = NA_real_
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- attr(out, "year_selected")
+  attr(result, "source_dataset") <- attr(out, "source_dataset")
+  result
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Wave B — Extensive sector indicators (employment-share downscaling)
+# ══════════════════════════════════════════════════════════════════════════════
+
+#' Internal helper: pull a Eurostat national-by-NACE table, restrict to EU-27,
+#' pick the latest year with full coverage across (Country, NACE), and return a
+#' tibble of (Country_ID, Sector_ID, Year, Value) ready for downscaling.
+.fetch_national_nace_latest <- function(id, filters, sector_codes,
+                                        year_col = "time",
+                                        value_col = "values",
+                                        max_years_back = 5L) {
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = id,
+    filters     = filters,
+    date_filter = seq(this_yr - max_years_back, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo),
+                  values = as.numeric(values),
+                  nace_r2 = as.character(nace_r2))
+
+  df <- raw |>
+    dplyr::filter(geo %in% eu27,
+                  nace_r2 %in% sector_codes,
+                  !is.na(values))
+
+  pick <- pick_latest_complete_year(
+    df, geo_dim = "geo", sector_dim = "nace_r2", value_col = value_col,
+    expected_geos = eu27, expected_sectors = sector_codes,
+    max_years_back = max_years_back
+  )
+
+  out <- df |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year) |>
+    dplyr::transmute(Country_ID = geo, nace_r2 = nace_r2,
+                     Year = pick$year, Value = values)
+
+  attr(out, "year_selected") <- pick$year
+  attr(out, "year_coverage") <- pick$coverage
+  attr(out, "missing_geos")  <- pick$missing_geos
+  attr(out, "missing_sectors") <- pick$missing_sectors
+  attr(out, "source_dataset") <- id
+  out
+}
+
+
+#' Map detailed NACE (env_ac_ainah_r2 style: C, C10-C12, ..., C31_C32, C33)
+#' to the canonical 11-group + C-total schema used by the pipeline.
+.nace_to_canonical_11 <- function(nace_r2) {
+  dplyr::case_when(
+    nace_r2 == "C"        ~ "C",
+    nace_r2 == "C10-C12"  ~ "C10-C12",
+    nace_r2 == "C13-C15"  ~ "C13-C15",
+    nace_r2 %in% c("C16","C17","C18") ~ "C16-C18",
+    nace_r2 %in% c("C19","C20")       ~ "C19-C20",
+    nace_r2 %in% c("C21","C22")       ~ "C21-C22",
+    nace_r2 == "C23"                  ~ "C23",
+    nace_r2 == "C24"                  ~ "C24",
+    nace_r2 %in% c("C25","C28")       ~ "C25+C28",
+    nace_r2 %in% c("C26","C27")       ~ "C26-C27",
+    nace_r2 %in% c("C29","C30")       ~ "C29-C30",
+    nace_r2 %in% c("C31_C32","C33")   ~ "C31-C33",
+    TRUE                              ~ NA_character_
+  )
+}
+
+
+#' Create Scope 1 GHG emissions (NUTS-2 × sector) from Eurostat
+#' `env_ac_ainah_r2` (airpol=GHG), downscaled via employment shares.
+create_scope1 <- function(base_data_path, empl_weights) {
+
+  nace_codes <- c("C","C10-C12","C13-C15","C16","C17","C18","C19","C20",
+                  "C21","C22","C23","C24","C25","C26","C27","C28","C29","C30",
+                  "C31_C32","C33")
+
+  national <- .fetch_national_nace_latest(
+    id = "env_ac_ainah_r2",
+    filters = list(airpol = "GHG", unit = "THS_T", nace_r2 = nace_codes),
+    sector_codes = nace_codes
+  )
+
+  # Aggregate to 11 canonical sectors (sum kt within each)
+  national_agg <- national |>
+    dplyr::mutate(Sector_ID = .nace_to_canonical_11(nace_r2)) |>
+    dplyr::filter(!is.na(Sector_ID)) |>
+    dplyr::group_by(Country_ID, Sector_ID) |>
+    dplyr::summarise(Scope1_kt = sum(Value, na.rm = TRUE), .groups = "drop")
+
+  regional <- downscale_national_to_nuts2(
+    national_df      = national_agg,
+    empl_weights = empl_weights,
+    value_cols       = "Scope1_kt"
+  )
+
+  result <- regional |>
+    dplyr::transmute(
+      Country_ID = Country_ID,
+      NUTS_ID    = NUTS_ID,
+      Sector_ID  = Sector_ID,
+      Indicator  = "GHG_Emissions",
+      Unit       = "kt CO2eq",
+      Value      = round(Scope1_kt, 4)
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- attr(national, "year_selected")
+  attr(result, "source_dataset") <- "env_ac_ainah_r2"
+  result
+}
+
+
+#' Create national-by-sector Energy Consumption (NUTS-2 × sector) from
+#' Eurostat `nrg_bal_c`, downscaled via employment shares. Uses the same
+#' FC_IND_* → 11-sector map as `create_scope2`.
+create_energy_consumption <- function(base_data_path, empl_weights) {
+
+  ind_codes <- c(
+    "FC_IND_FBT_E", "FC_IND_TL_E", "FC_IND_WP_E", "FC_IND_PPP_E",
+    "FC_IND_CPC_E", "FC_IND_IS_E", "FC_IND_NFM_E", "FC_IND_NMM_E",
+    "FC_IND_MAC_E", "FC_IND_TE_E", "FC_IND_NSP_E", "FC_IND_E"
+  )
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "nrg_bal_c",
+    filters     = list(siec = "TOTAL", unit = "GWH", geo = eu27,
+                       nrg_bal = ind_codes),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values))
+
+  # Pick latest year using FC_IND_E (industry total) as coverage check
+  pick <- pick_latest_complete_year(
+    raw |> dplyr::filter(nrg_bal == "FC_IND_E"),
+    geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  ene <- raw |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year, geo %in% eu27,
+                  nrg_bal %in% ind_codes) |>
+    dplyr::transmute(Country_ID = geo, nrg_bal, Elec_GWh = values)
+
+  sector_map <- tibble::tribble(
+    ~nrg_bal,        ~Sector_ID,
+    "FC_IND_FBT_E",  "C10-C12",
+    "FC_IND_TL_E",   "C13-C15",
+    "FC_IND_WP_E",   "C16-C18",
+    "FC_IND_PPP_E",  "C16-C18",
+    "FC_IND_CPC_E",  "C19-C20",
+    "FC_IND_IS_E",   "C24",
+    "FC_IND_NFM_E",  "C24",
+    "FC_IND_NMM_E",  "C23",
+    "FC_IND_MAC_E",  "C25+C28",
+    "FC_IND_TE_E",   "C29-C30",
+    "FC_IND_E",      "C"
+  )
+
+  ene_mapped <- ene |>
+    dplyr::inner_join(sector_map, by = "nrg_bal") |>
+    dplyr::group_by(Country_ID, Sector_ID) |>
+    dplyr::summarise(Energy_GWh = sum(Elec_GWh, na.rm = TRUE), .groups = "drop")
+
+  # Split FC_IND_NSP_E equally across the unmapped sectors (same as create_scope2)
+  nsp <- ene |>
+    dplyr::filter(nrg_bal == "FC_IND_NSP_E") |>
+    dplyr::select(Country_ID, NSP_GWh = Elec_GWh)
+  unmapped <- c("C21-C22", "C26-C27", "C31-C33")
+  nsp_split <- nsp |>
+    tidyr::crossing(Sector_ID = unmapped) |>
+    dplyr::mutate(Energy_GWh = NSP_GWh / length(unmapped)) |>
+    dplyr::select(Country_ID, Sector_ID, Energy_GWh)
+
+  national <- dplyr::bind_rows(ene_mapped, nsp_split)
+
+  regional <- downscale_national_to_nuts2(
+    national_df      = national,
+    empl_weights = empl_weights,
+    value_cols       = "Energy_GWh"
+  )
+
+  result <- regional |>
+    dplyr::transmute(
+      Country_ID = Country_ID,
+      NUTS_ID    = NUTS_ID,
+      Sector_ID  = Sector_ID,
+      Indicator  = "Energy_Consumption",
+      Unit       = "GWh",
+      Value      = round(Energy_GWh, 4)
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- pick$year
+  attr(result, "source_dataset") <- "nrg_bal_c"
+  result
+}
+
+
+#' Create extra-EU trade (Import + Export) by NUTS-2 × sector from Eurostat
+#' `ext_tec01`, downscaled via employment shares.
+create_trade_extra_eu <- function(base_data_path, empl_weights) {
+
+  # ext_tec01 NACE codes: detailed manufacturing letters
+  nace_codes <- c("C","C10","C11","C12","C13","C14","C15","C16","C17","C18",
+                  "C19","C20","C21","C22","C23","C24","C25","C26","C27","C28",
+                  "C29","C30","C31","C32","C33")
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "ext_tec01",
+    filters     = list(partner = "EXT_EU", unit = "THS_EUR",
+                       sizeclas = "TOTAL", geo = eu27,
+                       nace_r2 = nace_codes),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values),
+                  nace_r2 = as.character(nace_r2),
+                  stk_flow = as.character(stk_flow))
+
+  pick <- pick_latest_complete_year(
+    raw |> dplyr::filter(nace_r2 == "C", stk_flow == "IMP"),
+    geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  trade <- raw |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year)
+
+  # Aggregate detailed NACE divisions → 11 canonical sectors
+  trade_agg <- trade |>
+    dplyr::left_join(sector_aggregation, by = c("nace_r2" = "nace_detail")) |>
+    dplyr::filter(!is.na(Sector_ID)) |>
+    dplyr::group_by(stk_flow, Country_ID = geo, Sector_ID) |>
+    dplyr::summarise(MIO_EUR = sum(values, na.rm = TRUE) / 1000,
+                     .groups = "drop")
+
+  national_imp <- trade_agg |> dplyr::filter(stk_flow == "IMP") |>
+    dplyr::transmute(Country_ID, Sector_ID, Import = MIO_EUR)
+  national_exp <- trade_agg |> dplyr::filter(stk_flow == "EXP") |>
+    dplyr::transmute(Country_ID, Sector_ID, Export = MIO_EUR)
+
+  reg_imp <- downscale_national_to_nuts2(
+    national_df = national_imp, empl_weights = empl_weights,
+    value_cols  = "Import"
+  ) |>
+    dplyr::transmute(
+      Country_ID, NUTS_ID, Sector_ID,
+      Indicator = "Import_ExtraEU", Unit = "Million euro",
+      Value = round(Import, 2)
+    )
+
+  reg_exp <- downscale_national_to_nuts2(
+    national_df = national_exp, empl_weights = empl_weights,
+    value_cols  = "Export"
+  ) |>
+    dplyr::transmute(
+      Country_ID, NUTS_ID, Sector_ID,
+      Indicator = "Export_ExtraEU", Unit = "Million euro",
+      Value = round(Export, 2)
+    )
+
+  result <- list(import = reg_imp |> tibble::as_tibble(),
+                 export = reg_exp |> tibble::as_tibble())
+
+  attr(result, "year_selected") <- pick$year
+  attr(result, "source_dataset") <- "ext_tec01"
+  result
+}
+
+
+#' Create BERD (Business R&D, NUTS-2 × sector, EUR per inhabitant) from
+#' Eurostat `rd_e_berdindr2` (national by NACE in MIO_EUR) + `demo_r_d2jan`
+#' (NUTS-2 population). National BERD is downscaled via employment shares,
+#' then divided by NUTS-2 population to give EUR/inhabitant.
+create_berd <- function(base_data_path, empl_weights) {
+
+  nace_codes <- c("C","C10-C12","C13-C15","C16","C17","C18","C19","C20",
+                  "C21","C22","C23","C24","C25","C26","C27","C28","C29","C30",
+                  "C31_C32","C33")
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "rd_e_berdindr2",
+    filters     = list(nace_r2 = nace_codes, unit = "MIO_EUR", geo = eu27),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values),
+                  nace_r2 = as.character(nace_r2))
+
+  pick <- pick_latest_complete_year(
+    raw |> dplyr::filter(nace_r2 == "C"),
+    geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  berd <- raw |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year)
+
+  # Aggregate to 11 canonical sectors (some NACE need merging)
+  berd_agg <- berd |>
+    dplyr::mutate(Sector_ID = .nace_to_canonical_11(nace_r2)) |>
+    dplyr::filter(!is.na(Sector_ID)) |>
+    dplyr::group_by(Country_ID = geo, Sector_ID) |>
+    dplyr::summarise(BERD_MEUR = sum(values, na.rm = TRUE), .groups = "drop")
+
+  # Downscale BERD MIO_EUR via employment shares. Output is absolute MIO_EUR
+  # at NUTS-2 x Sector level. The per-employee normalisation happens in
+  # normalize_indicators (to_per_empl list) so BERD ends up as MIO_EUR per
+  # manufacturing employee in that NUTS-2 x Sector cell — a sector-specific
+  # R&D intensity measure.
+  #
+  # (Earlier versions also divided here by NUTS-2 population, producing
+  # EUR per inhabitant. Then normalize_indicators divided AGAIN by
+  # pers_employed, giving the nonsensical unit EUR / (inhabitant × employee).
+  # That double-divide inflated small-denominator regions like AT11
+  # Burgenland and made them appear as the most R&D-intensive in the EU.)
+  reg_berd <- downscale_national_to_nuts2(
+    national_df  = berd_agg,
+    empl_weights = empl_weights,
+    value_cols   = "BERD_MEUR"
+  )
+
+  result <- reg_berd |>
+    dplyr::transmute(
+      Country_ID = Country_ID,
+      NUTS_ID    = NUTS_ID,
+      Sector_ID  = Sector_ID,
+      Indicator  = "BERD",
+      Unit       = "Million euro",
+      Value      = round(BERD_MEUR, 4)
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- pick$year
+  attr(result, "source_dataset") <- "rd_e_berdindr2"
+  result
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Wave C — Intensive sector indicators (uniform replication)
+# ══════════════════════════════════════════════════════════════════════════════
+
+#' Create Energy Shares (Renewables_Share, Fossil_Share) by NUTS-2 × sector
+#' from Eurostat `nrg_bal_c` ratios.
+#'
+#' Renewables_Share = siec=RA000 / siec=TOTAL
+#' Fossil_Share     = siec=FE    / siec=TOTAL
+#' (FE = Eurostat "Fossil energy" aggregate; RA000 = Renewables and biofuels)
+#' Both ratios are computed at the country × NACE level and replicated to all
+#' NUTS-2 of the country (intensive quantity, scale-invariant).
+create_energy_shares <- function(base_data_path) {
+
+  ind_codes <- c(
+    "FC_IND_FBT_E", "FC_IND_TL_E", "FC_IND_WP_E", "FC_IND_PPP_E",
+    "FC_IND_CPC_E", "FC_IND_IS_E", "FC_IND_NFM_E", "FC_IND_NMM_E",
+    "FC_IND_MAC_E", "FC_IND_TE_E", "FC_IND_NSP_E", "FC_IND_E"
+  )
+  all_siec <- c("TOTAL", "RA000", "FE")
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "nrg_bal_c",
+    filters     = list(siec = all_siec, unit = "GWH", geo = eu27,
+                       nrg_bal = ind_codes),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values),
+                  siec = as.character(siec),
+                  nrg_bal = as.character(nrg_bal))
+
+  pick <- pick_latest_complete_year(
+    raw |> dplyr::filter(nrg_bal == "FC_IND_E", siec == "TOTAL"),
+    geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  ene <- raw |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year)
+
+  # Map nrg_bal → canonical sector (same map as create_energy_consumption)
+  sector_map <- tibble::tribble(
+    ~nrg_bal,        ~Sector_ID,
+    "FC_IND_FBT_E",  "C10-C12",
+    "FC_IND_TL_E",   "C13-C15",
+    "FC_IND_WP_E",   "C16-C18",
+    "FC_IND_PPP_E",  "C16-C18",
+    "FC_IND_CPC_E",  "C19-C20",
+    "FC_IND_IS_E",   "C24",
+    "FC_IND_NFM_E",  "C24",
+    "FC_IND_NMM_E",  "C23",
+    "FC_IND_MAC_E",  "C25+C28",
+    "FC_IND_TE_E",   "C29-C30",
+    "FC_IND_E",      "C"
+  )
+
+  ene_sec <- ene |>
+    dplyr::inner_join(sector_map, by = "nrg_bal") |>
+    dplyr::group_by(Country_ID = geo, Sector_ID, siec) |>
+    dplyr::summarise(Energy_GWh = sum(values, na.rm = TRUE), .groups = "drop")
+
+  # NSP split (same logic as create_energy_consumption)
+  nsp <- ene |>
+    dplyr::filter(nrg_bal == "FC_IND_NSP_E") |>
+    dplyr::group_by(Country_ID = geo, siec) |>
+    dplyr::summarise(NSP_GWh = sum(values, na.rm = TRUE), .groups = "drop")
+  unmapped <- c("C21-C22", "C26-C27", "C31-C33")
+  nsp_split <- nsp |>
+    tidyr::crossing(Sector_ID = unmapped) |>
+    dplyr::mutate(Energy_GWh = NSP_GWh / length(unmapped)) |>
+    dplyr::select(Country_ID, Sector_ID, siec, Energy_GWh)
+
+  ene_all <- dplyr::bind_rows(ene_sec, nsp_split)
+
+  # Pivot wider on siec to compute ratios
+  shares_nat <- ene_all |>
+    tidyr::pivot_wider(names_from = siec, values_from = Energy_GWh,
+                       values_fill = 0) |>
+    dplyr::mutate(
+      Renewables_Share = dplyr::if_else(TOTAL > 0, RA000 / TOTAL * 100, NA_real_),
+      Fossil_Share     = dplyr::if_else(TOTAL > 0, FE / TOTAL * 100, NA_real_)
+    ) |>
+    dplyr::select(Country_ID, Sector_ID, Renewables_Share, Fossil_Share)
+
+  # Replicate to all NUTS-2 of country
+  regional <- replicate_national_to_nuts2(
+    national_df    = shares_nat,
+    base_data_path = base_data_path,
+    value_cols     = c("Renewables_Share", "Fossil_Share")
+  )
+
+  result <- regional |>
+    tidyr::pivot_longer(c(Renewables_Share, Fossil_Share),
+                        names_to = "Indicator", values_to = "Value") |>
+    dplyr::transmute(
+      NUTS_ID    = NUTS_ID,
+      Sector_ID  = Sector_ID,
+      Indicator  = Indicator,
+      Value      = round(Value, 4),
+      Unit       = "Percentage"
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- pick$year
+  attr(result, "source_dataset") <- "nrg_bal_c"
+  result
+}
+
+
+#' Create Capital Stock based Productivity (NUTS-2, manufacturing) from
+#' Eurostat `nama_10_cp_a21` (national index NCS_HW / N11N / I20), replicated
+#' to all NUTS-2 of the country.
+create_capital_stock_prod <- function(base_data_path) {
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "nama_10_cp_a21",
+    filters     = list(nace_r2 = "C", na_item = "NCS_HW",
+                       asset10 = "N11N", unit = "I20", geo = eu27),
+    date_filter = seq(this_yr - 5L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values))
+
+  pick <- pick_latest_complete_year(
+    raw, geo_dim = "geo", value_col = "values",
+    expected_geos = eu27, max_years_back = 5L
+  )
+
+  national <- raw |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year) |>
+    dplyr::transmute(Country_ID = geo, Capital_Stock_Prod = values)
+
+  regional <- replicate_national_to_nuts2(
+    national_df    = national,
+    base_data_path = base_data_path,
+    value_cols     = "Capital_Stock_Prod"
+  )
+
+  result <- regional |>
+    dplyr::transmute(
+      Country_CD = Country_ID,
+      Country_Name = NA_character_,
+      NUTS_ID    = NUTS_ID,
+      NUTS_Name  = NA_character_,
+      Sector_CD  = NA_character_,
+      Sector_ID  = NA_character_,
+      Component  = "Vulnerability",
+      Dimension  = "Finance",
+      Variable   = "Capital_Stock_Based_Prod",
+      Year       = pick$year,
+      Source     = "Eurostat nama_10_cp_a21",
+      Unit       = "Index (2020=100)",
+      Value      = round(Capital_Stock_Prod, 4),
+      Value_Norm = NA_real_
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected") <- pick$year
+  attr(result, "source_dataset") <- "nama_10_cp_a21"
+  result
 }

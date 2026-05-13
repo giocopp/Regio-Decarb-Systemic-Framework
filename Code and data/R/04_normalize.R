@@ -114,15 +114,22 @@ normalize_indicators <- function(data_long, empl_weights) {
       )
     )
 
-  # ── 3b. Winsorize GFCF at 95th percentile (by sector) ──
-  # Caps the Ireland outlier (multinational profit-shifting inflates GFCF).
-  # Following OECD/JRC Handbook on Constructing Composite Indicators (2008).
+  # ── 3b. Winsorize GFCF and BERD at 99th percentile (by Indicator x Sector) ──
+  # Caps only the Ireland multinational profit-shifting outlier (which the
+  # JRC Handbook on Constructing Composite Indicators 2008 explicitly flags
+  # as a known statistical distortion). Smaller regions with genuinely high
+  # capital intensity per worker (e.g. Valle d'Aosta with Cogne steelworks,
+  # Greek-island processing facilities) are NOT artefacts and should not be
+  # capped — they reflect real economic structure.
+  # NOTE: the cap MUST be computed from values of the same indicator only.
+  # Earlier versions computed the cap across all indicators per sector,
+  # mixing kt-CO2 with EUR/employee and effectively disabling the cap.
   data_ready <- data_ready |>
-    group_by(Sector_ID) |>
+    group_by(Indicator, Sector_ID) |>
     mutate(
       Value = if_else(
-        Indicator == "Gross_Fixed_Capital_Formation",
-        winsorize_upper(Value, p = 0.95),
+        Indicator %in% c("Gross_Fixed_Capital_Formation", "BERD"),
+        winsorize_upper(Value, p = 0.99),
         Value
       )
     ) |>

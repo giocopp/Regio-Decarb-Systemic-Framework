@@ -21,7 +21,24 @@ aggregate_risk <- function(norm_wide) {
                         "Renewables_Share", "RE_Potential"),
     Labour          = c("Unemployment_Rate", "Labour_Market_Slack",
                         "Highly_Skilled_Workers"),
-    Finance         = c("Gross_Fixed_Capital_Formation", "Cohesion_Fund"),
+    # Finance dimension intentionally excludes Cohesion_Fund and
+    # Capital_Stock_Based_Prod.
+    # - Cohesion_Fund: ambiguous (captures 'need' and 'support' at once).
+    # - Capital_Stock_Based_Prod (NCS_HW, I20): the index measures the change
+    #   in capital per hour worked since 2020. Direction is ambiguous —
+    #   growth could mean modernisation (good) or labour exodus (bad),
+    #   decline could mean stranded-asset write-offs (bad) or labour growth
+    #   (good). Reviewer 2 of 25CP7059-RA flagged this ambiguity. Indicator
+    #   is still computed and saved to FINANCE-Capital_Stock_Based_Prod.xlsx
+    #   for reference but excluded from the composite.
+    Finance         = c("Gross_Fixed_Capital_Formation"),
+    # Supply_Chain intentionally uses Import_ExtraEU only, NOT Export_ExtraEU.
+    # Per Reviewer 2 of the 25CP7059-RA submission: "being embedded in global
+    # supply chains may also be positive as it may drive innovation and allow
+    # a company to tap into new markets more easily". Export access is treated
+    # as a resilience factor (ambiguous direction for vulnerability), so it is
+    # kept out of the composite. Import dependence remains as the supply-chain
+    # vulnerability signal.
     Supply_Chain    = c("Import_ExtraEU"),
     Technology      = c("BERD", "Regional_Innovation"),
     Institutions    = c("QoG_Index", "Climate_Mitigation_Laws"),

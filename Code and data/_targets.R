@@ -118,7 +118,7 @@ list(
 
   tar_target(
     scope2_data,
-    { force(empl_region_file); create_scope2(path$base_data, path$empl_shares) }
+    { force(empl_region_file); create_scope2(path$base_data, empl_weights) }
   ),
   tar_target(
     scope2_file,
@@ -131,7 +131,7 @@ list(
 
   tar_target(
     scope3_data,
-    { force(empl_region_file); create_scope3(path$empl_shares) }
+    { force(empl_region_file); create_scope3(empl_weights) }
   ),
   tar_target(
     scope3_file,
@@ -144,7 +144,7 @@ list(
 
   tar_target(
     qog_data,
-    create_qog(path$qog)
+    create_qog(path$qog, path$base_data)
   ),
   tar_target(
     qog_file,
@@ -194,6 +194,120 @@ list(
     format = "file"
   ),
 
+  # ── Wave A — NUTS-2 direct Eurostat indicators ───────────────
+  tar_target(gfcf_data,       create_gfcf(path$base_data)),
+  tar_target(gfcf_file,
+             write_indicator_xlsx(gfcf_data,
+                                  "Initial data/Non sector data/FINANCE-GFCF.xlsx"),
+             format = "file"),
+
+  tar_target(unemployment_data, create_unemployment(path$base_data)),
+  tar_target(unemployment_file,
+             write_indicator_xlsx(unemployment_data,
+                                  "Initial data/Non sector data/LABOUR-Unemployment.xlsx"),
+             format = "file"),
+
+  tar_target(labour_slack_data, create_labour_slack(path$base_data)),
+  tar_target(labour_slack_file,
+             write_indicator_xlsx(labour_slack_data,
+                                  "Initial data/Non sector data/LABOUR-Labour_Market_Slack.xlsx"),
+             format = "file"),
+
+  tar_target(highly_skilled_data, create_highly_skilled(path$base_data)),
+  tar_target(highly_skilled_file,
+             write_indicator_xlsx(highly_skilled_data,
+                                  "Initial data/Non sector data/LABOUR-Highly_Skilled_Workers.xlsx"),
+             format = "file"),
+
+  # ── Wave B — Extensive sector indicators (empl-share downscale) ─
+  tar_target(scope1_data,
+             { force(empl_region_file); create_scope1(path$base_data, empl_weights) }),
+  tar_target(scope1_file,
+             write_indicator_xlsx(scope1_data,
+                                  "Initial data/Sector data/EXP-Emissions-Correct.xlsx"),
+             format = "file"),
+
+  tar_target(energy_consumption_data,
+             { force(empl_region_file); create_energy_consumption(path$base_data, empl_weights) }),
+  tar_target(energy_consumption_file,
+             write_indicator_xlsx(energy_consumption_data,
+                                  "Initial data/Sector data/ENERGY-Energy-Correct.xlsx"),
+             format = "file"),
+
+  tar_target(trade_extra_eu,
+             { force(empl_region_file); create_trade_extra_eu(path$base_data, empl_weights) }),
+  tar_target(trade_import_file,
+             write_indicator_xlsx(trade_extra_eu$import,
+                                  "Initial data/Sector data/SUPCH-Import.xlsx"),
+             format = "file"),
+  tar_target(trade_export_file,
+             write_indicator_xlsx(trade_extra_eu$export,
+                                  "Initial data/Sector data/SUPCH-Export.xlsx"),
+             format = "file"),
+
+  tar_target(berd_data,
+             { force(empl_region_file); create_berd(path$base_data, empl_weights) }),
+  tar_target(berd_file,
+             write_indicator_xlsx(berd_data,
+                                  "Initial data/Sector data/TECH-BERD.xlsx"),
+             format = "file"),
+
+  # ── Wave C — Intensive sector indicators (uniform replication) ─
+  tar_target(energy_shares_data, create_energy_shares(path$base_data)),
+  tar_target(energy_shares_file,
+             write_indicator_xlsx(energy_shares_data,
+                                  "Initial data/Sector data/ENERGY-Shares_Eurostat_nat.xlsx"),
+             format = "file"),
+
+  tar_target(capital_stock_prod_data, create_capital_stock_prod(path$base_data)),
+  tar_target(capital_stock_prod_file,
+             write_indicator_xlsx(capital_stock_prod_data,
+                                  "Initial data/Non sector data/FINANCE-Capital_Stock_Based_Prod.xlsx"),
+             format = "file"),
+
+  # ── Coverage report (which year each indicator picked) ──────
+  tar_target(
+    coverage_report,
+    {
+      yr <- function(x) {
+        y <- attr(x, "year_selected")
+        if (is.null(y)) NA_integer_ else as.integer(y)
+      }
+      src <- function(x, fallback) {
+        s <- attr(x, "source_dataset")
+        if (is.null(s)) fallback else as.character(s)
+      }
+      rows <- tibble::tibble(
+        Indicator = c("Employment_Weights","GFCF","Unemployment",
+                      "Labour_Market_Slack","Highly_Skilled_Workers",
+                      "GHG_Emissions_Scope1","Scope2_Emissions","Scope3_Emissions",
+                      "Energy_Consumption","Energy_Shares","Trade_Extra_EU",
+                      "BERD","Capital_Stock_Based_Prod"),
+        Source_Dataset = c(src(empl_weights, "sbs_r_nuts2021"),
+                           src(gfcf_data, "nama_10r_2gfcf"),
+                           src(unemployment_data, "lfst_r_lfu3rt"),
+                           src(labour_slack_data, "lfst_r_sla_ga"),
+                           src(highly_skilled_data, "hrst_st_rcat"),
+                           "env_ac_ainah_r2",
+                           src(scope2_data, "nrg_bal_c"),
+                           src(scope3_data, "naio_10_fcp_ii4 + env_ac_ghgfp"),
+                           "nrg_bal_c",
+                           "nrg_bal_c",
+                           "ext_tec01",
+                           "rd_e_berdindr2 + demo_r_d2jan",
+                           "nama_10_cp_a21"),
+        Year_Selected = c(yr(empl_weights), yr(gfcf_data), yr(unemployment_data),
+                          yr(labour_slack_data), yr(highly_skilled_data),
+                          yr(scope1_data), yr(scope2_data), yr(scope3_data),
+                          yr(energy_consumption_data), yr(energy_shares_data),
+                          yr(trade_extra_eu), yr(berd_data),
+                          yr(capital_stock_prod_data))
+      )
+      writexl::write_xlsx(rows, "Final data/Coverage_Report.xlsx")
+      rows
+    }
+  ),
+
   # ── Phase 2: Harmonize ───────────────────────────────────────
   # Phase 2 depends on Phase 1 file targets (force() registers the dependency)
   tar_target(
@@ -202,6 +316,9 @@ list(
       force(hhi_file); force(qog_file)
       force(climate_laws_file); force(re_potential_file)
       force(cohesion_fund_file)
+      force(gfcf_file); force(unemployment_file)
+      force(labour_slack_file); force(highly_skilled_file)
+      force(capital_stock_prod_file)
       harmonize_non_sector(
         file_paths = validate_files(nonsector_files),
         base_data_path = path$base_data
@@ -213,6 +330,8 @@ list(
     sector_data,
     {
       force(scope2_file); force(scope3_file); force(policy_pressure_file)
+      force(scope1_file); force(energy_consumption_file); force(energy_shares_file)
+      force(trade_import_file); force(trade_export_file); force(berd_file)
       harmonize_sector(
         file_paths = validate_files(sector_files),
         non_sector_data = non_sector_data,
