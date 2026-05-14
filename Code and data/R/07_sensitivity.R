@@ -1,18 +1,14 @@
-# ── 07_sensitivity.R ── Sensitivity analysis for TRI robustness ───
-# Tests: alpha weights, PCA vs equal, leave-one-out, geometric vs arithmetic
-# Input:  risk_data tibble (from 05_aggregate)
-# Output: tibble with columns test, spearman_rho
+# 07_sensitivity.R — TRI robustness checks. Each test perturbs one
+# construction choice and reports Spearman rho vs the baseline ranking.
 
 
-#' Local helper: compute TRI from Exposure and Vulnerability
+#' Geometric TRI: Risk = E^alpha * V^(1-alpha).
 compute_tri <- function(e, v, a) e^a * v^(1 - a)
 
-#' Run full sensitivity analysis on the TRI
-#'
-#' @param risk_data Tibble from aggregate_risk() containing at minimum:
-#'   NUTS_ID, Sector_ID, Risk_norm, Exposure, Vulnerability, and Vuln_* columns
-#' @return Tibble with columns: test (character), spearman_rho (numeric)
-run_sensitivity <- function(risk_data) {
+
+#' Run the sensitivity battery. With `edgar_scope1` supplied, appends the
+#' EDGAR-based Scope 1 tests for C19-C20, C23, C24.
+run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
 
   baseline <- risk_data |>
     dplyr::filter(!is.na(Risk_norm)) |>
@@ -22,10 +18,10 @@ run_sensitivity <- function(risk_data) {
   vuln_cols <- grep("^Vuln_", names(risk_data), value = TRUE)
   message("Vulnerability dimensions: ", paste(vuln_cols, collapse = ", "))
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
 
   # A. ALPHA SENSITIVITY
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   alpha_grid <- c(0.30, 0.40, 0.50, 0.60, 0.70)
 
   alpha_results <- purrr::map_dfr(alpha_grid, function(a) {
@@ -42,9 +38,9 @@ run_sensitivity <- function(risk_data) {
                    spearman_rho = round(rho, 4))
   })
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   # B. PCA VS EQUAL WEIGHTS
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   vuln_data <- risk_data |>
     dplyr::filter(!is.na(Risk_norm)) |>
     dplyr::select(NUTS_ID, Sector_ID, Exposure, Risk_norm,
@@ -84,9 +80,9 @@ run_sensitivity <- function(risk_data) {
   pca_row <- tibble::tibble(test = "PCA weights",
                             spearman_rho = round(rho_pca, 4))
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   # C. LEAVE-ONE-DIMENSION-OUT
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   loo_results <- purrr::map_dfr(vuln_cols, function(drop_col) {
     remaining <- setdiff(vuln_cols, drop_col)
 
@@ -114,9 +110,9 @@ run_sensitivity <- function(risk_data) {
                    spearman_rho = round(rho, 4))
   })
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   # D. GEOMETRIC VS ARITHMETIC AGGREGATION
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   arith <- risk_data |>
     dplyr::filter(!is.na(Risk_norm)) |>
     dplyr::mutate(
@@ -132,9 +128,9 @@ run_sensitivity <- function(risk_data) {
   agg_row <- tibble::tibble(test = "Arithmetic mean",
                             spearman_rho = round(rho_agg, 4))
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   # E. Z-SCORE NORMALIZATION
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
   zscore <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
 
   z_data <- risk_data |>
@@ -166,8 +162,18 @@ run_sensitivity <- function(risk_data) {
   zscore_row <- tibble::tibble(test = "Z-score normalization",
                                spearman_rho = round(rho_z, 4))
 
-  # ════════════════════════════════════════════════════════════════
+  # ───────────────────────────────────────────────
+  # F. EDGAR-BASED SCOPE 1 SENSITIVITY (C19-C20, C23, C24)
+  # ───────────────────────────────────────────────
+  edgar_rows <- if (!is.null(edgar_scope1)) {
+    run_edgar_sensitivity(risk_data, edgar_scope1)
+  } else {
+    tibble::tibble(test = character(0), spearman_rho = numeric(0))
+  }
+
+  # ───────────────────────────────────────────────
   # COMBINE
-  # ════════════════════════════════════════════════════════════════
-  dplyr::bind_rows(alpha_results, pca_row, loo_results, agg_row, zscore_row)
+  # ───────────────────────────────────────────────
+  dplyr::bind_rows(alpha_results, pca_row, loo_results,
+                   agg_row, zscore_row, edgar_rows)
 }

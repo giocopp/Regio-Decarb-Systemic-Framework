@@ -1,7 +1,4 @@
-# ── _targets.R ── Transition Risk Index pipeline ─────────────────
-#
-# Reproduces the full TRI analysis from raw Eurostat inputs
-# to final risk scores, figures, and sensitivity analysis.
+# _targets.R — TRI pipeline definition.
 #
 # Usage:
 #   setwd("Code and data")
@@ -9,11 +6,6 @@
 #   tar_make()            # run full pipeline
 #   tar_visnetwork()      # view dependency graph
 #   tar_read(risk_data)   # load a specific target
-#
-# Reference:
-#   "A Systemic Framework for Assessing the Risk of Decarbonization
-#    to Regional Manufacturing Activities in the European Union"
-# ──────────────────────────────────────────────────────────────────
 
 library(targets)
 library(tarchetypes)
@@ -26,7 +18,7 @@ tar_option_set(
   packages = c("dplyr", "tidyr", "readxl", "writexl", "stringr",
                "janitor", "purrr", "ggplot2", "sf", "giscoR",
                "RColorBrewer", "patchwork", "fmsb", "scales",
-               "restatapi", "readr", "Matrix")
+               "restatapi", "readr", "Matrix", "terra", "curl")
 )
 
 # ── File paths (inputs) ──────────────────────────────────────────
@@ -46,7 +38,6 @@ nonsector_files <- c(
   "Initial data/Non sector data/LABOUR-Labour_Market_Slack.xlsx",
   "Initial data/Non sector data/LABOUR-Unemployment.xlsx",
   "Initial data/Non sector data/TECH-RIS.xlsx",
-  "Initial data/Non sector data/DIVERS-HHI.xlsx",
   "Initial data/Non sector data/DIVERS-RE_Potential.xlsx",
   "Initial data/Non sector data/INST-QoG.xlsx",
   "Initial data/Non sector data/INST-Climate_Laws.xlsx",
@@ -64,7 +55,8 @@ sector_files <- c(
   "Initial data/Sector data/EMPL_Region.xlsx",
   "Initial data/Sector data/EXP-Scope2_Emissions.xlsx",
   "Initial data/Sector data/EXP-Scope3_Emissions.xlsx",
-  "Initial data/Sector data/EXP-Policy_Pressure.xlsx"
+  "Initial data/Sector data/EXP-Policy_Pressure.xlsx",
+  "Initial data/Sector data/DIVERS-Sector_Concentration.xlsx"
 )
 
 # ══════════════════════════════════════════════════════════════════
@@ -91,14 +83,15 @@ list(
   ),
 
   tar_target(
-    hhi_data,
-    { force(empl_region_file); create_hhi(path$empl_shares) }
+    sector_concentration_data,
+    { force(empl_region_file); create_sector_concentration(path$empl_shares) }
   ),
   tar_target(
-    hhi_file,
+    sector_concentration_file,
     {
-      writexl::write_xlsx(hhi_data, "Initial data/Non sector data/DIVERS-HHI.xlsx")
-      "Initial data/Non sector data/DIVERS-HHI.xlsx"
+      writexl::write_xlsx(sector_concentration_data,
+                          "Initial data/Sector data/DIVERS-Sector_Concentration.xlsx")
+      "Initial data/Sector data/DIVERS-Sector_Concentration.xlsx"
     },
     format = "file"
   ),
@@ -280,7 +273,7 @@ list(
       rows <- tibble::tibble(
         Indicator = c("Employment_Weights","GFCF","Unemployment",
                       "Labour_Market_Slack","Highly_Skilled_Workers",
-                      "GHG_Emissions_Scope1","Scope2_Emissions","Scope3_Emissions",
+                      "Scope1_Emissions","Scope2_Emissions","Scope3_Emissions",
                       "Energy_Consumption","Energy_Shares","Trade_Extra_EU",
                       "BERD","Capital_Stock_Based_Prod"),
         Source_Dataset = c(src(empl_weights, "sbs_r_nuts2021"),
@@ -313,7 +306,7 @@ list(
   tar_target(
     non_sector_data,
     {
-      force(hhi_file); force(qog_file)
+      force(qog_file)
       force(climate_laws_file); force(re_potential_file)
       force(cohesion_fund_file)
       force(gfcf_file); force(unemployment_file)
@@ -332,6 +325,7 @@ list(
       force(scope2_file); force(scope3_file); force(policy_pressure_file)
       force(scope1_file); force(energy_consumption_file); force(energy_shares_file)
       force(trade_import_file); force(trade_export_file); force(berd_file)
+      force(sector_concentration_file)
       harmonize_sector(
         file_paths = validate_files(sector_files),
         non_sector_data = non_sector_data,
@@ -398,9 +392,15 @@ list(
   ),
 
   # ── Phase 8: Sensitivity analysis ────────────────────────────
+  # EDGAR-based Scope 1 for C19-C20, C23, C24 — sensitivity input only.
+  tar_target(
+    edgar_scope1,
+    compute_edgar_scope1(year = 2023L)
+  ),
+
   tar_target(
     sensitivity_results,
-    run_sensitivity(risk_data)
+    run_sensitivity(risk_data, edgar_scope1 = edgar_scope1)
   ),
 
   tar_target(
@@ -425,14 +425,6 @@ list(
                           "Final data/Top_Bottom_Regions_per_Sector.xlsx")
       "Final data/Top_Bottom_Regions_per_Sector.xlsx"
     },
-    format = "file"
-  ),
-
-  tar_target(
-    figure_decomposition,
-    plot_risk_decomposition(risk_data, output_dir = "Figures",
-                            sectors = c("C", "C24", "C25+C28", "C29-C30",
-                                        "C19-C20", "C23")),
     format = "file"
   ),
 

@@ -1,4 +1,4 @@
-# ── utils.R ── Shared helpers for the TRI pipeline ────────────────
+# utils.R — shared constants and helpers used across the pipeline.
 
 #' Min-max rescale to [0.01, 0.99], preserving true zeros
 #'
@@ -102,25 +102,14 @@ sector_aggregation <- tibble::tribble(
   "C31",  "C31-C33", "C32", "C31-C33", "C33", "C31-C33"
 )
 
-#' Overseas / excluded NUTS-2 regions.
-#'
-#' These are the EU's *ultraperipheral* regions plus the obsolete Croatian
-#' NUTS-2013 codes that were superseded by HR04 in NUTS-2021. They are
-#' dropped from the analysis because Eurostat coverage of climate, energy and
-#' employment indicators is patchy for them, and they are not part of the
-#' continental industrial base the TRI targets.
-#'
-#' Notes:
-#'   - CY00 (Cyprus) is intentionally NOT in this list — Cyprus is the
-#'     sole NUTS-2 region of an EU-27 member state and is kept in the
-#'     analysis.
+#' NUTS-2 regions excluded from the analysis (EU ultraperipheral).
 excluded_nuts <- c("FRY1", "FRY2", "FRY3", "FRY4", "FRY5",
                     "ES63", "ES64", "PT20", "PT30", "FI20")
 
 #' Aggregation rules for NUTS recombination (sum vs mean)
 agg_rules <- tibble::tribble(
   ~Indicator,                        ~agg_fun,
-  "GHG_Emissions",                   "sum",
+  "Scope1_Emissions",                   "sum",
   "Scope2_Emissions",                "sum",
   "Scope3_Emissions",                "sum",
   "Energy_Consumption",              "sum",
@@ -134,13 +123,13 @@ agg_rules <- tibble::tribble(
   "Unemployment_Rate",               "mean",
   "Export_ExtraEU",                  "sum",
   "Import_ExtraEU",                  "sum",
-  "BERD",                            "mean",
+  "BERD",                            "sum",
   "Regional_Innovation",             "mean",
   "Policy_Pressure",                 "mean",
   "QoG_Index",                       "mean",
   "Climate_Mitigation_Laws",         "mean",
-  "HHI_Employment",                  "mean",
-  "RE_Potential",                    "mean",
+  "Sector_Concentration",            "mean",
+  "RE_Potential",                    "sum",
   "Share_of_Employment",             "mean",
   "Intangible_Investments",          "sum",
   "Tangible_Investments",            "sum"
@@ -161,29 +150,15 @@ validate_files <- function(paths) {
 }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Helpers used by 01_create_data.R for the fully-scripted Eurostat pipeline
-# ══════════════════════════════════════════════════════════════════════════════
+# Helpers used by 01_create_data.R for the scripted Eurostat pipeline.
 
-#' Pick the latest year with complete coverage in a multi-year Eurostat slice
+
+#' Latest year with EU-27 coverage >= min_coverage in a Eurostat slice.
+#' Walks the year column from most recent to oldest (up to max_years_back);
+#' returns the year that first clears the coverage threshold. If none does,
+#' returns the year with the highest observed coverage.
 #'
-#' Given a tibble of Eurostat data covering multiple years, returns the latest
-#' year for which the value column is non-NA across all `expected_geos` (and
-#' optionally `expected_sectors`). Walks back year-by-year; if no year achieves
-#' full coverage within `max_years_back`, returns the year with the highest
-#' coverage and reports the missing entries.
-#'
-#' @param df Tibble with at least the columns `geo_dim`, year (numeric or
-#'   character), and `value_col`. May optionally have `sector_dim`.
-#' @param geo_dim Name of the geo column (e.g. "geo", "Country_ID")
-#' @param sector_dim Name of the sector column, or NULL if not applicable
-#' @param year_col Name of the year/time column (default "time")
-#' @param value_col Name of the value column (default "values")
-#' @param expected_geos Character vector of required geo codes
-#' @param expected_sectors Character vector of required sector codes, or NULL
-#' @param max_years_back Maximum number of years to walk back (default 5)
-#' @return List with components: year (integer), coverage (numeric, 0..1),
-#'   missing_geos (character), missing_sectors (character)
+#' @return list(year, coverage, missing_geos, missing_sectors).
 pick_latest_complete_year <- function(df,
                                       geo_dim,
                                       sector_dim = NULL,
@@ -201,7 +176,7 @@ pick_latest_complete_year <- function(df,
   years <- sort(unique(d$.year), decreasing = TRUE)
   years <- head(years, max_years_back)
 
-  # Walk years from latest → earliest, collect coverage stats per year
+  # Walk years from latest to earliest, collect coverage stats per year.
   stats <- list()
   for (yr in years) {
 
@@ -229,15 +204,11 @@ pick_latest_complete_year <- function(df,
                                         missing_sectors = miss_s)
   }
 
-  # Prefer the latest year with coverage >= min_coverage (treat near-complete
-  # as complete; small gaps can be filled per-cell from earlier years in the
-  # caller). Earlier years with higher coverage do NOT override a later
-  # acceptable year — recency wins above the threshold.
+  # Latest year above the coverage threshold wins (recency over completeness).
   acceptable <- Filter(function(s) s$coverage >= min_coverage, stats)
   if (length(acceptable) > 0) return(acceptable[[1]])
 
-  # Fallback: no year reaches min_coverage → pick the year with the highest
-  # observed coverage and report the gap.
+  # Fallback: no year reaches the threshold; report the best one observed.
   best_idx <- which.max(vapply(stats, function(s) s$coverage, numeric(1)))
   if (length(best_idx) == 0) {
     return(list(year = NA_integer_, coverage = -1,
@@ -248,37 +219,23 @@ pick_latest_complete_year <- function(df,
 }
 
 
-#' Downscale national-level (Country_ID, Sector_ID, value) data to NUTS-2
+#' Employment-share downscaler for extensive national indicators.
+#' Multiplies each national (Country_ID, Sector_ID) value by the region's
+#' share of national manufacturing employment in that sector (the `weight`
+#' column of `empl_weights`). Falls back to the Sector-C weight when a
+#' specific sector weight is missing.
 #'
-#' Single canonical employment-share downscaler. For each (Country_ID,
-#' Sector_ID), the national value is split across the country's NUTS-2 regions
-#' in proportion to that region's share of national manufacturing employment in
-#' that sector. The shares used here are the `weight` column from the
-#' `empl_weights` target produced by `create_employment_weights()`, which is
-#' computed as pers_employed[(NUTS-2, sector)] / sum_over_regions(pers_employed
-#' in that country × sector) and re-normalised to sum to 1 across regions.
-#' Sector "C" (Total Manufacturing) has its own row of weights computed the
-#' same way over total manufacturing employment.
+#' Takes the in-memory `empl_weights` tibble, NOT the EMPL_Region.xlsx
+#' file (which holds within-region shares that would collapse Sector C).
 #'
-#' IMPORTANT: this helper takes the `empl_weights` tibble (in-memory target),
-#' NOT the `EMPL_Region.xlsx` file. The xlsx contains within-region sub-sector
-#' shares which sum to 1 per NUTS-2 — those are NOT the right weights for
-#' downscaling and using them collapses Sector "C" values to a uniform 1/N
-#' split within country.
-#'
-#' @param national_df Tibble keyed by Country_ID × Sector_ID with one or more
-#'   value columns to downscale
-#' @param empl_weights Tibble from `create_employment_weights()` with columns
-#'   Country_ID, NUTS_ID, Sector_ID, weight (regional share of national
-#'   sector-level employment, summing to 1 within Country × Sector)
-#' @param value_cols Character vector of column names to downscale
-#' @return Tibble keyed by Country_ID × NUTS_ID × Sector_ID with the downscaled
-#'   value columns (other columns dropped)
+#' @param national_df Tibble with Country_ID, Sector_ID, and value columns.
+#' @param empl_weights Tibble (Country_ID, NUTS_ID, Sector_ID, weight).
+#' @param value_cols Character vector of column names to downscale.
+#' @return Tibble keyed by Country_ID x NUTS_ID x Sector_ID.
 downscale_national_to_nuts2 <- function(national_df,
                                         empl_weights,
                                         value_cols) {
 
-  # Sanity check: empl_weights must have the expected schema
   required <- c("Country_ID", "NUTS_ID", "Sector_ID", "weight")
   missing <- setdiff(required, names(empl_weights))
   if (length(missing) > 0) {
@@ -291,16 +248,12 @@ downscale_national_to_nuts2 <- function(national_df,
   weights <- empl_weights |>
     dplyr::select(Country_ID, NUTS_ID, Sector_ID, weight)
 
-  # Fallback weights: a region's share of country total manufacturing
-  # employment (Sector_ID == "C"). Used when a (Country, Sector) cell has no
-  # sector-specific employment record (e.g. Luxembourg reports C24 emissions
-  # in env_ac_ainah_r2 but has zero C24 employment in sbs_r_nuts2021).
+  # Sector-C weight as fallback when a specific sector weight is missing.
   fallback <- weights |>
     dplyr::filter(Sector_ID == "C") |>
     dplyr::select(Country_ID, NUTS_ID, weight_fallback = weight)
 
-  # For each (Country_ID, Sector_ID) cell in national_df, generate one row
-  # per NUTS-2 region in that country.
+  # One row per NUTS-2 region per (Country_ID, Sector_ID) cell.
   countries <- unique(national_df$Country_ID)
   region_grid <- weights |>
     dplyr::filter(Country_ID %in% countries, Sector_ID == "C") |>
@@ -324,18 +277,8 @@ downscale_national_to_nuts2 <- function(national_df,
 }
 
 
-#' Replicate national-level value to every NUTS-2 region of a country
-#'
-#' Single canonical replicator for intensive indicators (ratios, indices,
-#' percentages). Each NUTS-2 region of a country receives the same national
-#' value. Used by `create_energy_shares` (Renewables/Fossil shares) and
-#' `create_capital_stock_prod`.
-#'
-#' @param national_df Tibble keyed by Country_ID (and optionally Sector_ID) with
-#'   one or more value columns
-#' @param base_data_path Path to base_data_plus.xlsx (provides NUTS-2 list)
-#' @param value_cols Character vector of column names to replicate
-#' @return Tibble keyed by Country_ID × NUTS_ID (× Sector_ID if present)
+#' Uniform replicator for intensive national indicators (ratios, indices,
+#' percentages). Each NUTS-2 of a country receives the same national value.
 replicate_national_to_nuts2 <- function(national_df,
                                         base_data_path,
                                         value_cols) {
@@ -354,33 +297,16 @@ replicate_national_to_nuts2 <- function(national_df,
 }
 
 
-#' Write a tibble to xlsx and return the path
-#'
-#' One-line file-target helper to drop boilerplate in `_targets.R`.
-#'
-#' @param df Tibble to write
-#' @param out_path Destination path
-#' @return out_path (for use as a file target)
+#' Write a tibble to xlsx and return the path (for `tar_target` file targets).
 write_indicator_xlsx <- function(df, out_path) {
   writexl::write_xlsx(df, out_path)
   out_path
 }
 
 
-#' Compare a new scripted xlsx against the legacy file, cell by cell
-#'
-#' QA tool used after each wave. Not wired into `tar_make()`. Joins on
-#' `key_cols`, reports rows-only-in-new, rows-only-in-legacy, and per-column
-#' max relative / absolute differences.
-#'
-#' @param new_path Path to the newly generated xlsx
-#' @param legacy_path Path to the legacy xlsx
-#' @param key_cols Character vector of join key columns
-#' @param value_cols Character vector of value columns to diff
-#' @param rtol Maximum acceptable relative difference (default 0.05)
-#' @param atol Maximum acceptable absolute difference (default 0.01)
-#' @return Tibble summarising the diff per value column; also prints a console
-#'   report and raises a warning if any tolerance is exceeded
+#' QA helper: compare a new scripted xlsx against a legacy file, cell by cell.
+#' Not wired into `tar_make()`; intended for interactive sanity checks.
+#' Returns a per-column diff summary and warns on tolerance breaches.
 compare_xlsx_to_legacy <- function(new_path, legacy_path, key_cols, value_cols,
                                    rtol = 0.05, atol = 0.01) {
 

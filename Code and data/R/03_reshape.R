@@ -1,28 +1,14 @@
-# ── 03_reshape.R ── Expand long data to a complete region x sector grid ───────
-#
-# Exported function:
-#   reshape_to_grid()
-#
-# Packages loaded via tar_option_set() in _targets.R
+# 03_reshape.R — expand the harmonised tibble into a complete
+# region x sector x indicator grid and apply NUTS-2013 -> NUTS-2021
+# recombinations.
 
-# ── reshape_to_grid() ───────────────────────────────────────────────────────
 
-#' Expand all_data_long into a complete region x sector grid, handle NUTS
-#' recombinations, and collapse duplicates.
+#' Expand `all_data_long` into a complete region x sector grid, handle
+#' NUTS recombinations (HR, NL, PT), and collapse duplicates.
 #'
-#' Three pathways:
-#'   1. Region x Sector  -- keep as-is.
-#'   2. Sector-national   -- divide Value by n_regions, replicate to every region.
-#'   3. Region-only       -- cross with all sectors.
-#'
-#' NUTS recombinations:
-#'   Croatia    HR02 + HR05 + HR06 -> HR04
-#'   Netherlands NL35 -> NL31, NL36 -> NL33
-#'   Portugal   PT19 + PT1D -> PT16, PT1A + PT1B -> PT17, PT1C -> PT18
-#'
-#' @param all_data_long Tibble from combine_all().
-#' @param agg_rules     Tibble with columns Indicator, agg_fun ("sum"/"mean")
-#'                      from utils.R.
+#' @param all_data_long Tibble from `combine_all()`.
+#' @param agg_rules     Tibble (Indicator, agg_fun in {"sum","mean"}) from
+#'   `utils.R`. Sum for extensive quantities, mean for intensive ones.
 #' @return Long tibble with one row per region x sector x indicator.
 reshape_to_grid <- function(all_data_long, agg_rules) {
 
@@ -72,8 +58,7 @@ reshape_to_grid <- function(all_data_long, agg_rules) {
       Value = mean(Value, na.rm = TRUE),
       Notes = Notes[which.max(!is.na(Notes))],
       .groups = "drop"
-    ) |>
-    filter(!(Indicator == "Energy_Consumption" & Unit != "MWh"))
+    )
 
   # ──────────────────────────────────────────────────────────────────────────
 

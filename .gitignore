@@ -27,6 +27,9 @@ Code and data/Derived data/
 # Large FIGARO MRIO cache (~10 MB each; regenerated on first tar_make if absent)
 Code and data/Initial data/Non sector data/FIGARO_*.rds
 
+# EDGAR gridded NetCDF cache (~25 MB each; regenerated on first tar_make)
+Code and data/Initial data/_cache/
+
 # CSV duplicates of xlsx final outputs (the xlsx are tracked; CSVs are redundant)
 Code and data/Final data/*.csv
 

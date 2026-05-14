@@ -1,11 +1,4 @@
-# ── 02_harmonize.R ── Read, standardise & combine raw indicator files ──────────
-#
-# Three exported functions (all return tibbles for targets compatibility):
-#   harmonize_non_sector()
-#   harmonize_sector()
-#   combine_all()
-#
-# Packages loaded via tar_option_set() in _targets.R
+# 02_harmonize.R — read per-indicator xlsx and combine into one long tibble.
 
 # ── helpers (internal) ────────────────────────────────────────────────────────
 
@@ -25,22 +18,11 @@
   )
 }
 
-#' Split legacy "C25+C28-C30" rows into "C25+C28" and "C29-C30"
-#'
-#' Several pre-pipeline static xlsx files (Scope 1 emissions, energy,
-#' BERD, trade) were prepared with the old aggregate sector
-#' "C25+C28-C30". After the split, we need values for the two new
-#' sectors. We allocate using the NUTS-2 employment share of each new
-#' sector within the original aggregate:
-#'   - Sum-rule indicators (GHG, Scope2/3, Energy, Imports, Exports):
-#'     Value is multiplied by the per-NUTS-2 share.
-#'   - Mean-rule indicators (Fossil_Share, Renewables_Share, BERD):
-#'     Value is duplicated to both new sectors.
-#' Determination of sum vs mean uses agg_rules in utils.R.
-#'
-#' @param sector_data harmonised long tibble (post indicator-rename)
-#' @param empl_weights tibble with C25+C28 and C29-C30 employment counts
-#' @return sector_data with C25+C28-C30 rows replaced by the two splits
+#' Split legacy "C25+C28-C30" rows into "C25+C28" and "C29-C30".
+#' Defensive: kept for back-compatibility with older xlsx vintages — the
+#' current pipeline emits the post-split schema directly so this is usually
+#' a no-op. Sum-rule indicators use the regional share; mean-rule indicators
+#' are duplicated.
 .split_C25_C28_C30 <- function(sector_data, empl_weights) {
 
   to_split <- sector_data |>
@@ -237,7 +219,6 @@ harmonize_non_sector <- function(file_paths, base_data_path) {
     mutate(Indicator = case_when(
       Indicator == "Unemployment" ~ "Unemployment_rate",
       Indicator == "GFCF"        ~ "Gross_Fixed_Capital_Formation",
-      Indicator == "HHI"         ~ "HHI_Employment",
       Indicator == "RE_Potential" ~ "RE_Potential",
       Indicator == "QoG"         ~ "QoG_Index",
       Indicator == "Climate_Laws"~ "Climate_Mitigation_Laws",
@@ -344,7 +325,7 @@ harmonize_sector <- function(file_paths, non_sector_data, empl_weights) {
     mutate(Indicator = case_when(
       Indicator == "intang_inv"        ~ "Intangible_Investments",
       Indicator == "tang_inv"          ~ "Tangible_Investments",
-      Indicator == "Emissions"         ~ "GHG_Emissions",
+      Indicator == "Emissions"         ~ "Scope1_Emissions",
       Indicator == "Import"            ~ "Import_ExtraEU",
       Indicator == "Export"            ~ "Export_ExtraEU",
       Indicator == "Scope2_Emissions"  ~ "Scope2_Emissions",
@@ -357,7 +338,7 @@ harmonize_sector <- function(file_paths, non_sector_data, empl_weights) {
   sector_data <- sector_data |>
     mutate(
       Component = if_else(
-        Indicator %in% c("GHG_Emissions", "Scope2_Emissions",
+        Indicator %in% c("Scope1_Emissions", "Scope2_Emissions",
                          "Scope3_Emissions", "Policy_Pressure"),
         "Exposure", "Vulnerability"
       ),
@@ -365,10 +346,11 @@ harmonize_sector <- function(file_paths, non_sector_data, empl_weights) {
         Indicator == "Share_of_Employment"                          ~ "Labor",
         Indicator %in% c("Tangible_Investments",
                          "Intangible_Investments")                 ~ "Finance",
-        Indicator %in% c("GHG_Emissions", "Scope2_Emissions",
+        Indicator %in% c("Scope1_Emissions", "Scope2_Emissions",
                          "Scope3_Emissions", "Policy_Pressure")    ~ "Exposure",
         Indicator %in% c("Import_ExtraEU", "Export_ExtraEU")       ~ "Supply_Chain",
         Indicator == "BERD"                                        ~ "Technology",
+        Indicator == "Sector_Concentration"                        ~ "Diversification",
         Indicator %in% c("Energy_Consumption", "Fossil_Share",
                          "Renewables_Share")                       ~ "Energy",
         TRUE                                                       ~ NA_character_

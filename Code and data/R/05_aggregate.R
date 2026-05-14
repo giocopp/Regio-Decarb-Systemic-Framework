@@ -1,19 +1,15 @@
-# ── 05_aggregate.R ── Risk aggregation pipeline step ───────────────
-# Computes Exposure, Vulnerability (7 dimensions), and TRI
-# Input:  normalised wide tibble (from 04_normalise)
-# Output: tibble with Exposure, Vuln_*, Vulnerability, Risk_norm, Risk_Band
+# 05_aggregate.R — composes Exposure, Vulnerability dimensions, and TRI.
 
 
 #' Aggregate normalised indicators into the Transition Risk Index
 #'
 #' @param norm_wide Tibble with NUTS_ID, Country_ID, Sector_ID, Sector_Name,
-#'   and normalised indicator columns
+#'   and normalised indicator columns (one per indicator, Value_N in [0.01, 0.99]).
 #' @return Tibble with all original columns plus Exposure, Vuln_* dimension
-#'   scores, Vulnerability, Risk_norm, and Risk_Band
+#'   scores, Vulnerability, Risk_norm, and Risk_Band.
 aggregate_risk <- function(norm_wide) {
 
-  # ── 1. Define indicator groups ──────────────────────────────────
-  exposure_vars <- c("GHG_Emissions", "Scope2_Emissions",
+  exposure_vars <- c("Scope1_Emissions", "Scope2_Emissions",
                      "Scope3_Emissions", "Policy_Pressure")
 
   dimensions <- list(
@@ -21,42 +17,21 @@ aggregate_risk <- function(norm_wide) {
                         "Renewables_Share", "RE_Potential"),
     Labour          = c("Unemployment_Rate", "Labour_Market_Slack",
                         "Highly_Skilled_Workers"),
-    # Finance dimension intentionally excludes Cohesion_Fund and
-    # Capital_Stock_Based_Prod.
-    # - Cohesion_Fund: ambiguous (captures 'need' and 'support' at once).
-    # - Capital_Stock_Based_Prod (NCS_HW, I20): the index measures the change
-    #   in capital per hour worked since 2020. Direction is ambiguous —
-    #   growth could mean modernisation (good) or labour exodus (bad),
-    #   decline could mean stranded-asset write-offs (bad) or labour growth
-    #   (good). Reviewer 2 of 25CP7059-RA flagged this ambiguity. Indicator
-    #   is still computed and saved to FINANCE-Capital_Stock_Based_Prod.xlsx
-    #   for reference but excluded from the composite.
-    Finance         = c("Gross_Fixed_Capital_Formation"),
-    # Supply_Chain intentionally uses Import_ExtraEU only, NOT Export_ExtraEU.
-    # Per Reviewer 2 of the 25CP7059-RA submission: "being embedded in global
-    # supply chains may also be positive as it may drive innovation and allow
-    # a company to tap into new markets more easily". Export access is treated
-    # as a resilience factor (ambiguous direction for vulnerability), so it is
-    # kept out of the composite. Import dependence remains as the supply-chain
-    # vulnerability signal.
     Supply_Chain    = c("Import_ExtraEU"),
     Technology      = c("BERD", "Regional_Innovation"),
     Institutions    = c("QoG_Index", "Climate_Mitigation_Laws"),
-    Diversification = c("HHI_Employment")
+    Diversification = c("Sector_Concentration")
   )
 
-  # ── 2. Gracefully drop missing indicators ───────────────────────
+  # Drop any indicators that aren't present in norm_wide, with a log message.
   available <- names(norm_wide)
   missing <- setdiff(c(exposure_vars, unlist(dimensions)), available)
   if (length(missing) > 0) {
     message("aggregate_risk: missing indicators (ignored): ",
             paste(missing, collapse = ", "))
   }
-
-
   exposure_vars <- intersect(exposure_vars, available)
   stopifnot("No exposure variables found in data" = length(exposure_vars) > 0)
-
   dimensions <- purrr::map(dimensions, \(vars) intersect(vars, available))
   empty_dims <- purrr::map_lgl(dimensions, \(v) length(v) == 0)
   if (any(empty_dims)) {
@@ -65,14 +40,13 @@ aggregate_risk <- function(norm_wide) {
     dimensions <- dimensions[!empty_dims]
   }
 
-  # ── 3. Impute NAs with country x sector median ─────────────────
+  # Country × sector median imputation for the indicator columns.
   all_vars <- c(exposure_vars, unlist(dimensions))
   df <- norm_wide
-  for (v in all_vars) {
-    df <- impute_with_median(df, v)
-  }
+  for (v in all_vars) df <- impute_with_median(df, v)
 
-  # ── 4. Composite Exposure (rowMeans, then range01 by sector) ────
+  # Exposure composite: row-mean of exposure indicators, then re-scaled
+  # within each sector.
   df <- df |>
     dplyr::mutate(
       Exposure = rowMeans(dplyr::pick(dplyr::all_of(exposure_vars)), na.rm = TRUE)
@@ -81,7 +55,8 @@ aggregate_risk <- function(norm_wide) {
     dplyr::mutate(Exposure = range01(Exposure)) |>
     dplyr::ungroup()
 
-  # ── 5. Dimension scores: Vuln_<dim> ────────────────────────────
+  # Dimension scores: row-mean of constituent indicators, then re-scaled
+  # within each sector to [0.01, 0.99].
   for (dim_name in names(dimensions)) {
     col_name <- paste0("Vuln_", dim_name)
     dim_vars <- dimensions[[dim_name]]
@@ -90,14 +65,12 @@ aggregate_risk <- function(norm_wide) {
         !!col_name := rowMeans(dplyr::pick(dplyr::all_of(dim_vars)), na.rm = TRUE)
       )
   }
-
-  # ── 6. Normalise each Vuln dimension by sector ─────────────────
   df <- df |>
     dplyr::group_by(Sector_ID) |>
     dplyr::mutate(dplyr::across(dplyr::starts_with("Vuln_"), range01)) |>
     dplyr::ungroup()
 
-  # ── 7. Vulnerability = mean of all Vuln_* columns, range01 ─────
+  # Vulnerability = mean of the dimension scores, then re-scaled.
   df <- df |>
     dplyr::mutate(
       Vulnerability = rowMeans(
@@ -108,7 +81,8 @@ aggregate_risk <- function(norm_wide) {
     dplyr::mutate(Vulnerability = range01(Vulnerability)) |>
     dplyr::ungroup()
 
-  # ── 8. TRI = Exposure^0.5 x Vulnerability^0.5, range01 ────────
+  # TRI = Exposure^alpha × Vulnerability^(1-alpha); alpha=0.5 (equal weight).
+  # Exposure == 0 -> NA so the geometric product is undefined (Zero Risk band).
   alpha <- 0.50
   df <- df |>
     dplyr::mutate(
@@ -120,15 +94,15 @@ aggregate_risk <- function(norm_wide) {
     dplyr::ungroup() |>
     dplyr::select(-Risk_raw)
 
-  # ── 9. Risk bands (quintile-style 0.2 breaks) ──────────────────
+  # Equal-width quintile risk bands.
   band_labels <- c("Very Low", "Low", "Medium", "High", "Very High")
   df <- df |>
     dplyr::mutate(
       Risk_Band = cut(
         Risk_norm,
-        breaks        = seq(0, 1, by = 0.20),
+        breaks         = seq(0, 1, by = 0.20),
         include.lowest = TRUE,
-        labels        = band_labels
+        labels         = band_labels
       ),
       Risk_Band = dplyr::case_when(
         is.na(Risk_norm) ~ "Zero Risk",
@@ -136,6 +110,5 @@ aggregate_risk <- function(norm_wide) {
       )
     )
 
-  # ── 10. Return ─────────────────────────────────────────────────
   dplyr::as_tibble(df)
 }

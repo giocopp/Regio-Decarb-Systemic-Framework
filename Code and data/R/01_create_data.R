@@ -1,23 +1,15 @@
-# ── 01_create_data.R ── Functions to create initial data for TRI pipeline ─────
-#
-# Each function takes file paths as arguments (targets-compatible) and returns
-# a tibble. No file writing -- targets handles persistence.
-# ──────────────────────────────────────────────────────────────────────────────
+# 01_create_data.R — Eurostat indicator creators. Each function pulls one
+# Eurostat dataset, picks the latest year with EU-27 coverage, downscales
+# to NUTS-2 if needed, and returns a tibble. `targets` handles persistence.
 
 
-# ── 1) Employment weights ────────────────────────────────────────────────────
-
-#' Download and process regional employment weights from Eurostat
+#' Regional employment weights from `sbs_r_nuts2021` (EMP_LOC_NR).
+#' Handles confidential cells, imputes regional NAs from country x sector
+#' medians, re-anchors regional sums to national totals, enforces additivity
+#' of sub-sectors to Sector C, and computes weights normalised within each
+#' Country x Sector.
 #'
-#' Downloads sbs_r_nuts2021 (EMP_LOC_NR) from Eurostat, handles confidential
-#' cells, prefers 2022 over 2021, imputes missing regionals from country-sector
-#' medians, re-anchors regionals to national totals, enforces C-additivity,
-#' aggregates to 11 macro sectors, and computes employment shares.
-#'
-#' @param base_data_path Path to base_data_plus.xlsx (used to identify valid
-#'   NUTS-2 regions)
-#' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID,
-#'   pers_employed, weight
+#' @return Tibble: Country_ID, NUTS_ID, Sector_ID, pers_employed, weight.
 create_employment_weights <- function(base_data_path) {
 
   nace_codes <- c(
@@ -68,9 +60,8 @@ create_employment_weights <- function(base_data_path) {
   df <- df |>
     dplyr::mutate(values = dplyr::if_else(flags == "c", NA_real_, values))
 
-  # ── Pick the latest year with the broadest NUTS-2 coverage ─────
-  #    Fall back per cell to the most recent prior year when the
-  #    chosen year is NA for that (geo, sector) combination.
+  # Pick latest year with full NUTS-2 coverage; per-cell fall back to the
+  # most recent prior non-NA value if a region is missing in the chosen year.
   pick <- pick_latest_complete_year(
     df |> dplyr::filter(nchar(geo) == 4, nace_r2 == "C"),
     geo_dim = "geo", value_col = "values",
@@ -245,44 +236,35 @@ write_empl_region_xlsx <- function(empl_weights, out_path) {
 }
 
 
-# ── 2) Diversification HHI ──────────────────────────────────────────────────
+# ── 2) Sector concentration (Diversification dimension) ────────────────────
 
-#' Compute Herfindahl-Hirschman Index of manufacturing employment concentration
+#' Share of the focal sector in the region's total manufacturing
+#' employment, per (NUTS-2 region x NACE sub-sector). Higher share means
+#' the region depends more heavily on that sector and has less alternative
+#' employment to absorb a shock to it -- so this is the vulnerability-side
+#' input to the Diversification dimension.
 #'
-#' Higher HHI = more concentrated = less diversified = more vulnerable.
-#' Uses 10 subsectors (excluding aggregate C): min HHI = 1/10 = 0.10.
-#'
-#' @param empl_shares_path Path to EMPL_Region.xlsx (employment shares by
-#'   NUTS-2 region and sector)
-#' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
-#'   Variable, Unit, Value
-create_hhi <- function(empl_shares_path) {
+#' Replaces an earlier region-only Herfindahl-Hirschman index, which by
+#' construction did not vary across sectors and so produced identical
+#' Diversification maps for every sector.
+create_sector_concentration <- function(empl_shares_path) {
 
   empl <- readxl::read_xlsx(empl_shares_path)
 
-  hhi <- empl |>
+  empl |>
     dplyr::filter(!is.na(Value), Value >= 0) |>
-    dplyr::group_by(NUTS_ID) |>
-    dplyr::summarise(
-      n_sectors  = dplyr::n(),
-      sum_shares = sum(Value, na.rm = TRUE),
-      HHI        = sum(Value^2, na.rm = TRUE),
-      .groups    = "drop"
-    )
-
-  hhi |>
     dplyr::transmute(
       Country_CD   = substr(NUTS_ID, 1, 2),
       Country_Name = NA_character_,
       NUTS_ID      = NUTS_ID,
       NUTS_Name    = NA_character_,
       Sector_CD    = NA_character_,
-      Sector_ID    = NA_character_,
+      Sector_ID    = Sector_ID,
       Component    = "Vulnerability",
       Dimension    = "Diversification",
-      Variable     = "HHI_Employment",
-      Unit         = "Index (0-1)",
-      Value        = round(HHI, 6),
+      Variable     = "Sector_Concentration",
+      Unit         = "Share of regional manufacturing employment [0, 1]",
+      Value        = round(Value, 6),
       Value_Norm   = NA_real_
     ) |>
     tibble::as_tibble()
@@ -291,15 +273,14 @@ create_hhi <- function(empl_shares_path) {
 
 # ── 3) Policy Pressure ──────────────────────────────────────────────────────
 
-#' Create sector-level policy-pressure indicator (ETS + CBAM coverage)
-#'
-#' Hardcodes ETS and CBAM coverage scores per sector and replicates the
-#' composite (equal-weighted average) across all NUTS-2 regions.
-#'
-#' @param base_data_path Path to base_data_plus.xlsx (provides NUTS-2 region
-#'   list)
-#' @return Tibble with columns: Country_CD, NUTS_ID, Sector_ID, Component,
-#'   Dimension, Variable, Unit, Value
+#' Policy_Pressure per NACE sector = sum of hard-coded ETS and CBAM
+#' coverage scores, replicated to every NUTS-2 region. The two schemes
+#' stack rather than substitute: a sector covered by both faces both
+#' costs simultaneously (ETS prices direct emissions, CBAM prices the
+#' carbon content of imports of the same goods), so the cumulative
+#' regulatory pressure is additive. Raw range [0, 2]; min-max
+#' normalisation in 04_normalize.R rescales to [0.01, 0.99] within the
+#' indicator.
 create_policy_pressure <- function(base_data_path) {
 
   policy_data <- tibble::tibble(
@@ -316,7 +297,7 @@ create_policy_pressure <- function(base_data_path) {
       0.00, 1.00, 1.00, 0.00, 0.00, 0.00, 0.00
     )
   ) |>
-    dplyr::mutate(Policy_Pressure = (ETS_Coverage + CBAM_Coverage) / 2)
+    dplyr::mutate(Policy_Pressure = ETS_Coverage + CBAM_Coverage)
 
   nuts2 <- readxl::read_xlsx(base_data_path) |>
     dplyr::filter(nchar(NUTS_ID) == 4) |>
@@ -333,7 +314,7 @@ create_policy_pressure <- function(base_data_path) {
       Component    = "Exposure",
       Dimension    = "Exposure",
       Variable     = "Policy_Pressure",
-      Unit         = "Index (0-1)",
+      Unit         = "Score (0-2)",
       Value        = round(Policy_Pressure, 4),
       Value_Norm   = NA_real_
     ) |>
@@ -343,18 +324,9 @@ create_policy_pressure <- function(base_data_path) {
 
 # ── 4) Scope 2 Emissions ────────────────────────────────────────────────────
 
-#' Approximate Scope 2 GHG emissions for manufacturing subsectors
-#'
-#' Downloads electricity consumption from Eurostat (nrg_bal_c), multiplies by
-#' hardcoded grid emission factors (EEA/EMBER 2022), and downscales to NUTS-2
-#' regions via employment shares.
-#'
-#' @param base_data_path Path to base_data_plus.xlsx (not used directly but
-#'   kept for pipeline symmetry)
-#' @param empl_shares_path Path to EMPL_Region.xlsx (employment shares used
-#'   for regional downscaling)
-#' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID, Indicator,
-#'   Unit, Value
+#' Approximate Scope 2 GHG emissions = national industrial electricity
+#' consumption (nrg_bal_c) x country-level grid emission factor
+#' (EEA/EMBER 2022), then downscaled to NUTS-2 by employment share.
 create_scope2 <- function(base_data_path, empl_weights) {
 
   # ── Grid emission factors (gCO2/kWh), EEA/EMBER 2022 ──────────
@@ -431,13 +403,9 @@ create_scope2 <- function(base_data_path, empl_weights) {
     dplyr::group_by(Country_ID, Sector_ID) |>
     dplyr::summarise(Elec_GWh = sum(Elec_GWh, na.rm = TRUE), .groups = "drop")
 
-  # ── Distribute FC_IND_NSP_E equally among unmapped sectors ─────
-  # ASSUMPTION: FC_IND_NSP_E ("not elsewhere specified" industrial electricity)
-  # is split equally among 3 subsectors with no direct Eurostat energy-balance
-  # counterpart: C21-C22 (Pharmaceutical & Plastic), C26-C27 (Electronic &
-  # Electrical), C31-C33 (Other Manufacturing & Repair). In practice,
-  # electricity intensity varies across these sectors; alternatives include
-  # employment-weighted or value-added-weighted allocation.
+  # FC_IND_NSP_E ("not elsewhere specified") is split equally among the
+  # three sub-sectors without a direct nrg_bal counterpart: C21-C22, C26-C27,
+  # C31-C33.
   nsp <- elec |>
     dplyr::filter(nrg_bal == "FC_IND_NSP_E") |>
     dplyr::select(Country_ID, NSP_GWh = Elec_GWh)
@@ -483,38 +451,11 @@ create_scope2 <- function(base_data_path, empl_weights) {
 
 # ── 4b) Scope 3 Emissions (Producer-side MRIO upstream) ─────────────────────
 
-#' Compute producer-side upstream Scope 3 GHG emissions via FIGARO MRIO
-#'
-#' Implements the standard MRIO Leontief approach to Scope 3 emissions:
-#' for each (country, industry), traces all upstream supply-chain emissions
-#' attributable to that sector's production, summed across all upstream
-#' tiers (cradle-to-gate). Electricity (NACE D35) is excluded from the
-#' upstream multiplier so it does not double-count with the separate
-#' Scope 2 indicator.
-#'
-#' Method:
-#'   Z   = inter-country intermediate flow matrix (50 regions x 64 NACE)
-#'   x   = total output by (region, industry) = rowSum(Z) + final demand
-#'   A   = Z * diag(1/x)              direct requirements
-#'   L   = (I - A)^{-1}               Leontief inverse
-#'   f   = Scope 1 emissions / output, with f[D35] = 0 (Scope 2 boundary)
-#'   m_j = sum over i of f[i] * (L[i,j] - delta_{i,j})    (upstream multiplier)
-#'   Scope3_{r,j} = m_j * x_j         (tonnes CO2eq per producer cell)
-#'
-#' Data sources (both cached as RDS on first call, reused thereafter):
-#'   - FIGARO industry-by-industry IO table: Eurostat naio_10_fcp_ii4 (2022)
-#'   - FIGARO GHG emission footprints: Eurostat env_ac_ghgfp (2022),
-#'     producer-side Scope 1 derived by summing over c_dest.
-#'
-#' Regions: 49 individual countries (EU-27 + non-EU FIGARO regions) plus
-#' WRL_REST. Industries: 64 real NACE Rev. 2 sectors. Aggregated to the 11
-#' manufacturing groups used in the paper and downscaled to NUTS-2 via
-#' employment shares (same proportionality assumption as Scope 2).
-#'
-#' @param empl_shares_path Path to EMPL_Region.xlsx (employment shares for
-#'   NUTS-2 downscaling)
-#' @return Tibble with columns: Country_ID, NUTS_ID, Sector_ID, Indicator,
-#'   Unit, Value
+#' Producer-side upstream Scope 3 via MRIO Leontief: for each (country,
+#' industry), the upstream multiplier is m_j = sum_i f_i (L_{i,j} - delta_{i,j})
+#' with f = Scope 1 emissions / total output, L = (I - A)^{-1}, A = Z diag(1/x).
+#' Electricity (D35) is set to f[D35] = 0 to avoid double-counting Scope 2.
+#' FIGARO IO and GHG tables are cached as RDS on first call.
 create_scope3 <- function(empl_weights) {
 
   # ── 0. Pick latest year for FIGARO tables (both must agree) ────
@@ -744,9 +685,9 @@ create_qog <- function(qog_path, base_data_path) {
                      EQI = EQI_nat,
                      EQI_level = "NUTS-0 (national, replicated)")
 
-  # Pass 3: for any NUTS-2 region in base_data that still lacks an EQI value
-  # (e.g. IE04/IE05/IE06 — Ireland's EQI in qog_eureg.csv is keyed under the
-  # old NUTS-2013 codes IE01/IE02), fall back to the country's NUTS-0 EQI.
+  # Final fallback: NUTS-2 regions in base_data not yet covered by either
+  # pass (e.g. Ireland's IE04/IE05/IE06 vs the NUTS-2013 IE01/IE02 in the
+  # source) get the country NUTS-0 EQI.
   missing_nuts2 <- nuts2_grid |>
     dplyr::anti_join(qog_nuts2, by = "NUTS_ID") |>
     dplyr::anti_join(fallback_rows, by = "NUTS_ID") |>
@@ -756,10 +697,8 @@ create_qog <- function(qog_path, base_data_path) {
 
   combined <- dplyr::bind_rows(qog_nuts2, fallback_rows, missing_nuts2)
 
-  # Collapse to one row per NUTS_ID with the most specific EQI level available
-  # (NUTS-2 wins over NUTS-0 fallbacks). Otherwise harmonize_non_sector's
-  # crossing by Unit duplicates rows when the same NUTS-2 has multiple
-  # fallback entries with different Unit strings.
+  # One row per NUTS_ID with the most specific EQI level available;
+  # NUTS-2 wins over NUTS-0 fallbacks.
   level_priority <- c("NUTS-2" = 1L,
                       "NUTS-0 (national, replicated)" = 2L,
                       "NUTS-0 (national, mismatched NUTS-2 codes)" = 3L)
@@ -793,17 +732,9 @@ create_qog <- function(qog_path, base_data_path) {
 
 # ── 6) Climate Mitigation Laws ──────────────────────────────────────────────
 
-#' Extract climate-mitigation-law count from QoG Environmental Indicators
-#'
-#' Reads QoG Environmental Indicators CSV, maps 3-letter ISO country codes to
-#' 2-letter using iso3_to_iso2 from utils.R, extracts ccl_nmitlp for the
-#' latest available year for EU-27 countries, and replicates the country-level
-#' value to all NUTS-2 regions.
-#'
-#' @param qog_ei_path Path to QoG Environmental Indicators CSV
-#' @param base_data_path Path to base_data_plus.xlsx (provides NUTS-2 list)
-#' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
-#'   Variable, Unit, Value
+#' Climate_Mitigation_Laws = QoG Environmental Indicators `ccl_nmitlp`
+#' (cumulative mitigation laws count) for the latest year per country,
+#' replicated to all NUTS-2 of the country.
 create_climate_laws <- function(qog_ei_path, base_data_path) {
 
 
@@ -864,14 +795,8 @@ create_climate_laws <- function(qog_ei_path, base_data_path) {
 
 # ── 7) Renewable Energy Potential ────────────────────────────────────────────
 
-#' Compute total renewable-energy potential at NUTS-2 level from ENSPRESO
-#'
-#' Reads JRC ENSPRESO NUTS-2 integrated data (semicolon-separated CSV) and
-#' computes total RE = wind_onshore + solar + biomass (medium scenario, TWh).
-#'
-#' @param enspreso_path Path to ENSPRESO_Integrated_NUTS2_Data.csv
-#' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
-#'   Variable, Unit, Value
+#' RE_Potential per NUTS-2 = wind_onshore + solar + biomass (medium
+#' scenario, TWh) from JRC ENSPRESO integrated NUTS-2 data.
 create_re_potential <- function(enspreso_path) {
 
   ensp <- readr::read_delim(enspreso_path, delim = ";", show_col_types = FALSE)
@@ -906,15 +831,9 @@ create_re_potential <- function(enspreso_path) {
 
 # ── 8) EU Cohesion Fund Payments Per Capita ────────────────────────────────
 
-#' Compute EU Cohesion Fund payments per capita at NUTS-2 level
-#'
-#' Downloads regionalised EU payment data (ERDF + CF + ESF, 2014-2020
-#' programming period) from the Cohesion Open Data Portal, sums total
-#' payments per NUTS-2 region, divides by population from Eurostat.
-#'
-#' @param base_data_path Path to base_data_plus.xlsx (provides NUTS-2 list)
-#' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
-#'   Variable, Unit, Value
+#' Cohesion_Fund per capita per NUTS-2 = regionalised ERDF + CF + ESF
+#' payments for the 2014-2020 programming period (Cohesion Open Data Portal,
+#' Socrata `tc55-7ysv`) divided by NUTS-2 population (demo_r_d2jan, 2020).
 create_cohesion_fund <- function(base_data_path) {
 
   # ── 1. Download regionalised payment data from Cohesion Open Data ──
@@ -1052,13 +971,11 @@ create_cohesion_fund <- function(base_data_path) {
 }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Wave A — NUTS-2 direct Eurostat indicators (no downscaling)
-# ══════════════════════════════════════════════════════════════════════════════
+# NUTS-2 direct Eurostat indicators (no downscaling).
 
-#' Internal helper: pull recent years from a Eurostat NUTS-2 table and
-#' return a tibble of (Country_CD, NUTS_ID, Year, Value) for the latest
-#' year with full EU-27 NUTS-2 coverage.
+
+#' Pull a Eurostat NUTS-2 table and return the latest year with full
+#' EU-27 NUTS-2 coverage: (Country_CD, NUTS_ID, Year, Value).
 .fetch_nuts2_latest <- function(id, filters, base_data_path,
                                 year_col = "time", value_col = "values",
                                 max_years_back = 5L) {
@@ -1206,13 +1123,8 @@ create_labour_slack <- function(base_data_path) {
 }
 
 
-#' Create Highly Skilled Workers (HRST PC_ACT, NUTS-2) from Eurostat
-#' `hrst_st_rcat`.
-#'
-#' Note: this replaces a custom unreproducible legacy calculation with the
-#' canonical HRST PC_ACT (Human Resources in Science & Technology as a share
-#' of the active population). Values may differ ~3-6pp from the legacy xlsx;
-#' the change is documented in the cover letter to the Climate Policy editor.
+#' Highly_Skilled_Workers per NUTS-2 = HRST as % of active population
+#' (Eurostat `hrst_st_rcat`, category=HRST, unit=PC_ACT, sex=T).
 create_highly_skilled <- function(base_data_path) {
 
   out <- .fetch_nuts2_latest(
@@ -1246,13 +1158,12 @@ create_highly_skilled <- function(base_data_path) {
 }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Wave B — Extensive sector indicators (employment-share downscaling)
-# ══════════════════════════════════════════════════════════════════════════════
+# Extensive sector indicators (downscaled to NUTS-2 by employment share).
 
-#' Internal helper: pull a Eurostat national-by-NACE table, restrict to EU-27,
-#' pick the latest year with full coverage across (Country, NACE), and return a
-#' tibble of (Country_ID, Sector_ID, Year, Value) ready for downscaling.
+
+#' Pull a Eurostat national x NACE table for EU-27, pick the latest year
+#' with full (Country x NACE) coverage, return (Country_ID, nace_r2,
+#' Year, Value) ready for downscaling.
 .fetch_national_nace_latest <- function(id, filters, sector_codes,
                                         year_col = "time",
                                         value_col = "values",
@@ -1317,8 +1228,9 @@ create_highly_skilled <- function(base_data_path) {
 }
 
 
-#' Create Scope 1 GHG emissions (NUTS-2 × sector) from Eurostat
-#' `env_ac_ainah_r2` (airpol=GHG), downscaled via employment shares.
+#' Scope1_Emissions per NUTS-2 x sector = national GHG by NACE
+#' (env_ac_ainah_r2, airpol=GHG, THS_T) aggregated to the 11 canonical
+#' manufacturing groups and downscaled by employment share.
 create_scope1 <- function(base_data_path, empl_weights) {
 
   nace_codes <- c("C","C10-C12","C13-C15","C16","C17","C18","C19","C20",
@@ -1349,7 +1261,7 @@ create_scope1 <- function(base_data_path, empl_weights) {
       Country_ID = Country_ID,
       NUTS_ID    = NUTS_ID,
       Sector_ID  = Sector_ID,
-      Indicator  = "GHG_Emissions",
+      Indicator  = "Scope1_Emissions",
       Unit       = "kt CO2eq",
       Value      = round(Scope1_kt, 4)
     ) |>
@@ -1361,9 +1273,10 @@ create_scope1 <- function(base_data_path, empl_weights) {
 }
 
 
-#' Create national-by-sector Energy Consumption (NUTS-2 × sector) from
-#' Eurostat `nrg_bal_c`, downscaled via employment shares. Uses the same
-#' FC_IND_* → 11-sector map as `create_scope2`.
+#' Energy_Consumption per NUTS-2 x sector = national industrial final
+#' energy use (nrg_bal_c, FC_IND_* per sub-sector, siec=TOTAL, GWh)
+#' downscaled by employment share. FC_IND_NSP_E is split equally across
+#' C21-C22, C26-C27, C31-C33.
 create_energy_consumption <- function(base_data_path, empl_weights) {
 
   ind_codes <- c(
@@ -1451,8 +1364,10 @@ create_energy_consumption <- function(base_data_path, empl_weights) {
 }
 
 
-#' Create extra-EU trade (Import + Export) by NUTS-2 × sector from Eurostat
-#' `ext_tec01`, downscaled via employment shares.
+#' Extra-EU Import and Export per NUTS-2 x sector = national trade by NACE
+#' (ext_tec01, partner=EXT_EU, sizeclas=TOTAL, THS_EUR) aggregated to the 11
+#' canonical groups and downscaled by employment share. Returns a list with
+#' `$import` and `$export` tibbles.
 create_trade_extra_eu <- function(base_data_path, empl_weights) {
 
   # ext_tec01 NACE codes: detailed manufacturing letters
@@ -1526,10 +1441,9 @@ create_trade_extra_eu <- function(base_data_path, empl_weights) {
 }
 
 
-#' Create BERD (Business R&D, NUTS-2 × sector, EUR per inhabitant) from
-#' Eurostat `rd_e_berdindr2` (national by NACE in MIO_EUR) + `demo_r_d2jan`
-#' (NUTS-2 population). National BERD is downscaled via employment shares,
-#' then divided by NUTS-2 population to give EUR/inhabitant.
+#' BERD per NUTS-2 x sector = national BERD by NACE (rd_e_berdindr2,
+#' MIO_EUR) downscaled by employment share. Returned as absolute MIO_EUR;
+#' the per-employee step happens in `normalize_indicators` (to_per_empl).
 create_berd <- function(base_data_path, empl_weights) {
 
   nace_codes <- c("C","C10-C12","C13-C15","C16","C17","C18","C19","C20",
@@ -1564,17 +1478,6 @@ create_berd <- function(base_data_path, empl_weights) {
     dplyr::group_by(Country_ID = geo, Sector_ID) |>
     dplyr::summarise(BERD_MEUR = sum(values, na.rm = TRUE), .groups = "drop")
 
-  # Downscale BERD MIO_EUR via employment shares. Output is absolute MIO_EUR
-  # at NUTS-2 x Sector level. The per-employee normalisation happens in
-  # normalize_indicators (to_per_empl list) so BERD ends up as MIO_EUR per
-  # manufacturing employee in that NUTS-2 x Sector cell — a sector-specific
-  # R&D intensity measure.
-  #
-  # (Earlier versions also divided here by NUTS-2 population, producing
-  # EUR per inhabitant. Then normalize_indicators divided AGAIN by
-  # pers_employed, giving the nonsensical unit EUR / (inhabitant × employee).
-  # That double-divide inflated small-denominator regions like AT11
-  # Burgenland and made them appear as the most R&D-intensive in the EU.)
   reg_berd <- downscale_national_to_nuts2(
     national_df  = berd_agg,
     empl_weights = empl_weights,
@@ -1598,18 +1501,14 @@ create_berd <- function(base_data_path, empl_weights) {
 }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Wave C — Intensive sector indicators (uniform replication)
-# ══════════════════════════════════════════════════════════════════════════════
+# Intensive sector indicators (national ratios/indices replicated to NUTS-2).
 
-#' Create Energy Shares (Renewables_Share, Fossil_Share) by NUTS-2 × sector
-#' from Eurostat `nrg_bal_c` ratios.
-#'
-#' Renewables_Share = siec=RA000 / siec=TOTAL
-#' Fossil_Share     = siec=FE    / siec=TOTAL
-#' (FE = Eurostat "Fossil energy" aggregate; RA000 = Renewables and biofuels)
-#' Both ratios are computed at the country × NACE level and replicated to all
-#' NUTS-2 of the country (intensive quantity, scale-invariant).
+
+#' Renewables_Share and Fossil_Share per NUTS-2 x sector from `nrg_bal_c`:
+#'   Renewables_Share = siec=RA000 / siec=TOTAL
+#'   Fossil_Share     = siec=FE    / siec=TOTAL
+#' Computed at country x NACE level and replicated to all NUTS-2 of the
+#' country (intensive, scale-invariant).
 create_energy_shares <- function(base_data_path) {
 
   ind_codes <- c(
@@ -1711,9 +1610,9 @@ create_energy_shares <- function(base_data_path) {
 }
 
 
-#' Create Capital Stock based Productivity (NUTS-2, manufacturing) from
-#' Eurostat `nama_10_cp_a21` (national index NCS_HW / N11N / I20), replicated
-#' to all NUTS-2 of the country.
+#' Capital_Stock_Based_Prod per NUTS-2 = national index from
+#' `nama_10_cp_a21` (NCS_HW, N11N, I20 = net fixed assets per hour worked,
+#' Index 2020=100) replicated to every NUTS-2 of the country.
 create_capital_stock_prod <- function(base_data_path) {
 
   this_yr <- as.integer(format(Sys.Date(), "%Y"))

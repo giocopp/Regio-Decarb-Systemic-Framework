@@ -2,20 +2,19 @@
 #
 # Builds tables and figures that exploit the existing risk_data more deeply:
 #   build_top_bottom_table()    -- 11 sectors x (top-5 + bottom-5) NUTS-2
-#   plot_risk_decomposition()   -- stacked bars: indicator contribution per region
 #   plot_quadrant()             -- Exposure x Vulnerability scatter w/ archetypes
 #   plot_within_country_var()   -- boxplots of regional risk spread per country
 #   plot_sector_cluster_maps()  -- employment concentration x risk score overlay
 
 # ── Constants ────────────────────────────────────────────────────────────────
-EXPOSURE_VARS <- c("GHG_Emissions", "Scope2_Emissions",
+EXPOSURE_VARS <- c("Scope1_Emissions", "Scope2_Emissions",
                    "Scope3_Emissions", "Policy_Pressure")
-VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour", "Vuln_Finance",
+VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour",
                "Vuln_Supply_Chain", "Vuln_Technology",
                "Vuln_Institutions", "Vuln_Diversification")
 
 EXPOSURE_PRETTY <- c(
-  GHG_Emissions    = "Scope 1",
+  Scope1_Emissions = "Scope 1",
   Scope2_Emissions = "Scope 2",
   Scope3_Emissions = "Scope 3",
   Policy_Pressure  = "Policy Pressure"
@@ -23,7 +22,6 @@ EXPOSURE_PRETTY <- c(
 VULN_PRETTY <- c(
   Vuln_Energy          = "Energy",
   Vuln_Labour          = "Labour",
-  Vuln_Finance         = "Finance",
   Vuln_Supply_Chain    = "Supply Chain",
   Vuln_Technology      = "Technology",
   Vuln_Institutions    = "Institutions",
@@ -99,7 +97,7 @@ build_top_bottom_table <- function(risk_data, k = 5L) {
       Risk_Type,
       Top_Exposure_Driver,
       Top_Vulnerability_Driver,
-      Scope1 = round(GHG_Emissions, 3),
+      Scope1 = round(Scope1_Emissions, 3),
       Scope2 = round(Scope2_Emissions, 3),
       Scope3 = round(Scope3_Emissions, 3),
       Policy_Pressure = round(Policy_Pressure, 3)
@@ -112,147 +110,7 @@ build_top_bottom_table <- function(risk_data, k = 5L) {
 }
 
 
-# ── 2. Risk decomposition heatmap ──────────────────────────────────────────
-
-#' Heatmap of sub-indicator contributions for top/bottom regions per sector
-#'
-#' For each sector, takes the top-k and bottom-k NUTS-2 regions by Risk_norm
-#' and plots a heatmap with:
-#'   - rows  = regions (top block on top, bottom block below, separated by a
-#'             facet break);
-#'   - cols  = 4 Exposure sub-indicators | 7 Vulnerability dimensions
-#'             (separated by a facet break);
-#'   - fill  = normalised value (0-1) on a Reds palette;
-#'   - text  = the value printed inside each cell.
-#' Region rows are labelled "NUTS_Name (Country) - Risk = 0.XX" so the reader
-#' sees the composite score next to the sub-indicator breakdown.
-#'
-#' @param risk_data Tibble from aggregate_risk()
-#' @param output_dir Output directory (default 'Figures')
-#' @param k Number of top + bottom regions per sector (default 5)
-#' @param sectors Character vector of Sector_IDs to plot
-#' @return Character vector of saved file paths (invisibly)
-plot_risk_decomposition <- function(risk_data, output_dir = "Figures",
-                                    k = 5L,
-                                    sectors = c("C", "C24",
-                                                "C25+C28", "C29-C30")) {
-
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  saved <- character()
-
-  for (s in sectors) {
-
-    sub <- risk_data |>
-      dplyr::filter(Sector_ID == s, !is.na(Risk_norm))
-
-    top <- sub |> dplyr::slice_max(Risk_norm, n = k, with_ties = FALSE) |>
-      dplyr::mutate(panel = "Top")
-    bot <- sub |> dplyr::slice_min(Risk_norm, n = k, with_ties = FALSE) |>
-      dplyr::mutate(panel = "Bottom")
-    selected <- dplyr::bind_rows(top, bot) |>
-      dplyr::mutate(
-        Country_Name = country_names[Country_ID],
-        NUTS_label   = paste0(NUTS_Name, " (", Country_Name,
-                              ")  -  Risk = ", formatC(Risk_norm,
-                                                       format = "f", digits = 2))
-      )
-
-    exp_long <- selected |>
-      dplyr::select(NUTS_label, panel,
-                    dplyr::all_of(EXPOSURE_VARS)) |>
-      tidyr::pivot_longer(cols = dplyr::all_of(EXPOSURE_VARS),
-                          names_to = "indicator", values_to = "value") |>
-      dplyr::mutate(component = "Exposure",
-                    indicator = EXPOSURE_PRETTY[indicator])
-
-    vuln_long <- selected |>
-      dplyr::select(NUTS_label, panel,
-                    dplyr::all_of(VULN_DIMS)) |>
-      tidyr::pivot_longer(cols = dplyr::all_of(VULN_DIMS),
-                          names_to = "indicator", values_to = "value") |>
-      dplyr::mutate(component = "Vulnerability",
-                    indicator = VULN_PRETTY[indicator])
-
-    plot_df <- dplyr::bind_rows(exp_long, vuln_long) |>
-      dplyr::mutate(
-        panel     = factor(panel, levels = c("Top", "Bottom")),
-        component = factor(component, levels = c("Exposure", "Vulnerability")),
-        indicator = factor(
-          indicator,
-          levels = c(unname(EXPOSURE_PRETTY), unname(VULN_PRETTY))
-        ),
-        cell_label = ifelse(is.na(value), "",
-                            formatC(value, format = "f", digits = 2))
-      )
-
-    # Order regions: top block highest Risk at top, bottom block lowest at top
-    order_top <- selected |>
-      dplyr::filter(panel == "Top") |>
-      dplyr::arrange(Risk_norm) |>     # lowest at bottom = highest at top
-      dplyr::pull(NUTS_label)
-    order_bot <- selected |>
-      dplyr::filter(panel == "Bottom") |>
-      dplyr::arrange(Risk_norm) |>
-      dplyr::pull(NUTS_label)
-    plot_df$NUTS_label <- factor(plot_df$NUTS_label,
-                                 levels = c(order_bot, order_top))
-
-    p <- ggplot2::ggplot(plot_df,
-            ggplot2::aes(x = indicator, y = NUTS_label, fill = value)) +
-      ggplot2::geom_tile(colour = "white", linewidth = 0.4) +
-      ggplot2::geom_text(ggplot2::aes(label = cell_label,
-                                       colour = value > 0.6),
-                          size = 3, show.legend = FALSE) +
-      ggplot2::facet_grid(panel ~ component,
-                          scales = "free", space = "free",
-                          switch = "y") +
-      ggplot2::scale_fill_distiller(
-        palette = "Reds", direction = 1, limits = c(0, 1),
-        na.value = "grey92",
-        labels = scales::percent_format(accuracy = 1),
-        name = "Normalised\nsub-indicator\nvalue"
-      ) +
-      ggplot2::scale_colour_manual(values = c(`TRUE` = "white",
-                                              `FALSE` = "grey20")) +
-      ggplot2::labs(
-        title    = paste0("Risk decomposition: ", sector_name_map[s]),
-        subtitle = paste0("Top-", k, " and Bottom-", k,
-                          " NUTS-2 regions by composite risk score. ",
-                          "Cells show each region's normalised value ",
-                          "(0 = lowest in sector, 1 = highest)."),
-        x = NULL, y = NULL
-      ) +
-      ggplot2::theme_minimal(base_size = 10) +
-      ggplot2::theme(
-        plot.title    = ggplot2::element_text(face = "bold"),
-        plot.subtitle = ggplot2::element_text(colour = "grey30"),
-        axis.text.x   = ggplot2::element_text(size = 9, angle = 35,
-                                              hjust = 1, vjust = 1),
-        axis.text.y   = ggplot2::element_text(size = 9),
-        strip.text.x  = ggplot2::element_text(face = "bold", size = 11),
-        strip.text.y.left = ggplot2::element_text(face = "bold", size = 11,
-                                                  angle = 90),
-        strip.placement = "outside",
-        strip.background = ggplot2::element_rect(fill = "grey92",
-                                                  colour = NA),
-        panel.spacing = ggplot2::unit(0.7, "lines"),
-        legend.position = "right",
-        legend.title = ggplot2::element_text(size = 8, face = "bold"),
-        legend.text  = ggplot2::element_text(size = 8)
-      )
-
-    slug <- gsub("[^A-Za-z0-9]+", "_", s)
-    outfile <- file.path(output_dir,
-                         paste0("Figure_7_decomposition_", slug, ".png"))
-    ggplot2::ggsave(outfile, p, width = 12, height = 7, dpi = 300, bg = "white")
-    saved <- c(saved, outfile)
-  }
-
-  invisible(saved)
-}
-
-
-# ── 3. Exposure x Vulnerability quadrant plot ──────────────────────────────
+# ── 2. Exposure x Vulnerability quadrant plot ──────────────────────────────
 
 #' Quadrant plot: Exposure (x) vs Vulnerability (y) with archetype labels
 #'
