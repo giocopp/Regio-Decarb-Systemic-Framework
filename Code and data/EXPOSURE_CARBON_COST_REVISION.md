@@ -174,3 +174,35 @@ Final structure (real-unit carbon cost at risk, pooled):
   "Combustion of fuels" code; join on Country_ID × Sector_ID.
 - **Vintage:** price/free-allocation = latest (2024/25); quantities at latest
   available (FIGARO 2023, Scope 1 latest Eurostat) — document the mismatch.
+
+## 10. First full assembly — result + open items
+
+ETS leg + country×sector free-allocation + CBAM leg now assembled end-to-end
+(`prototypes/ets_assembly.R`). Inputs: EEA `ETS_Database_April_2026.xlsx` (2024,
+GR→EL), crosswalk `ets_activity_nace_crosswalk.csv`, FIGARO 2023, `scope1_data`.
+
+- **`free_alloc_share` by country × sector** built (90 cells). EU means: C23
+  0.96, C24 0.94, C16-C18 0.87, C19-C20 0.79 (heavy free allocation).
+- **Pooled multiplicative Exposure** computed (2,820 cells, 0 NAs). Top cells:
+  Lombardia (steel/chemicals), Cataluña, Zuid-Holland, German chemical belt,
+  Île-de-France — EU heavy-industry heartlands.
+- **CBAM cost (0.13) > ETS net cost (0.07)** at 2024 free-allocation levels
+  (ETS heavily discounted by free allowances); this flips as free allocation
+  phases out 2026–2034 — a key sensitivity to run.
+- **Spearman vs baseline within-sector Exposure = 0.07** — a genuinely different
+  (cross-sector) index, by design (Option A).
+
+**Open items:**
+1. **Crosswalk validation.** `ets_activity_nace_crosswalk.csv` labels are
+   standard EU ETS Annex I + magnitude-corroborated, NOT from an official label
+   file (the bundle/EEA pages don't expose code→label). Validate against the
+   viewer's "Main Activity Sector Name". Code 10 vs 50 (aviation/legacy) and the
+   combustion code (20) treatment especially.
+2. **"C" total-manufacturing aggregate** currently ≈ 0 (no process code maps to
+   "C", and cbam_cov not set for "C"). Needs aggregate handling.
+3. Only 4 sectors carry ETS, 3 carry CBAM → other 7 manufacturing sectors ≈ 0
+   exposure (correct for a cost measure; the heavy-industry gradient).
+4. ETS quantity = total Scope 1 (slightly > ETS-covered portion for heavy
+   sectors); EUA scalar = 1 (ranking-irrelevant); free_alloc_share capped at 1
+   (over-allocated → P_ETS = 0, no negative exposure).
+5. Next: pooled Vulnerability → full TRI; free-allocation phase-out sensitivity.

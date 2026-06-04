@@ -1,0 +1,30 @@
+code,label_standard_annexI_TO_VALIDATE,Sector_ID,verified_2024_Mt,free_alloc_share_EU,included
+20,Combustion of fuels,EXCLUDED_power_crosscutting,561.0,0.114,no
+21,Refining of mineral oil,C19-C20,96.7,0.710,yes
+22,Production of coke,C19-C20,4.9,0.681,yes
+23,Metal ore roasting/sintering,C24,1.8,0.961,yes
+24,Production of pig iron or steel,C24,93.0,1.279,yes
+25,Production/processing of ferrous metals,C24,6.3,0.807,yes
+26,Production of primary aluminium,C24,2.5,0.827,yes
+27,Production of secondary aluminium,C24,1.0,0.804,yes
+28,Production/processing of non-ferrous metals,C24,5.4,1.033,yes
+29,Production of cement clinker,C23,86.0,1.032,yes
+30,Production of lime,C23,20.7,0.784,yes
+31,Manufacture of glass,C23,14.3,0.836,yes
+32,Manufacture of ceramics,C23,9.1,0.894,yes
+33,Manufacture of mineral wool,C23,1.7,0.773,yes
+34,Production of gypsum/plaster,C23,1.5,0.271,yes
+35,Production of pulp,C16-C18,3.5,1.420,yes
+36,Production of paper or cardboard,C16-C18,14.3,1.111,yes
+37,Production of carbon black,C19-C20,1.5,0.752,yes
+38,Production of nitric acid,C19-C20,2.0,1.409,yes
+39,Production of adipic acid,C19-C20,0.1,5.970,yes
+40,Production of glyoxal/glyoxylic acid,C19-C20,NA,NA,yes
+41,Production of ammonia,C19-C20,13.5,0.808,yes
+42,Production of bulk organic chemicals,C19-C20,29.7,0.964,yes
+43,Production of hydrogen and synthesis gas,C19-C20,8.0,0.686,yes
+44,Production of soda ash/sodium bicarbonate,C19-C20,3.4,1.209,yes
+45,Capture/transport/storage of CO2,EXCLUDED_not_manufacturing,NA,NA,no
+10,Aviation/legacy (uncertain),EXCLUDED_not_manufacturing,58.9,0.282,no
+50,Aviation (aircraft operators),EXCLUDED_not_manufacturing,70.4,0.000,no
+99,Other activity,EXCLUDED_other,0.7,0.951,no
