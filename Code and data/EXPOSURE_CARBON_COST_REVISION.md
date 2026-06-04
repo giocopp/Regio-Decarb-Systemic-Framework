@@ -21,18 +21,21 @@ index identical, cor = 1.0). Within-sector rankings are retained as a
 
 ## 2. Concept
 
-Carbon cost at risk maps **scopes to instruments** (consistent with the
-existing comment in `create_policy_pressure`: "ETS prices direct emissions,
-CBAM prices the carbon content of imports"):
+Exposure is a **single two-factor product**:
 
 ```
-CarbonCost_{r,s} ≈  Scope1_{r,s} · P_ETS_{s}        (direct, net of free allocation)
-                  + CoveredImports_{r,s} · P_CBAM_{s} (embedded carbon in imports)
+Exposure_{r,s} = Emissions_{r,s} × Costs_{s}
 ```
 
-i.e. a **sum of quantity × price terms**, not a single product. Scope 2 is
-priced indirectly via the electricity price already embedded in the grid-EF
-Scope 2 series; Scope 3 (other than CBAM imports) is largely unpriced.
+- **Emissions** (quantity): Scope 1 from EUTL, installation-level → NUTS-2 ×
+  sector. Carries the **regional** variation.
+- **Costs** (price): one carbon-cost/price factor internalising **ETS + CBAM**.
+  Carries the **sector/policy** variation.
+
+It is **not** a sum of separate ETS and CBAM terms, and free allocation is
+**not** folded into the emissions side. Under Option A (pooled normalisation)
+both factors drive the index: the product varies by region (via Emissions) and
+by sector (via Costs).
 
 ## 3. Two implementations to build and compare
 
@@ -143,3 +146,31 @@ a stratified analysis layer in the paper.
 cost → pooled cross-sector index; compare Spearman vs baseline TRI), **then**
 add the CBAM term (harder data + unresolved direction). De-risks the more
 debatable piece.
+
+## 9. Build status (latest)
+
+Final structure (real-unit carbon cost at risk, pooled):
+`Exposure_raw = Scope1_t × P_ETS + CBAM_emb_t × P_CBAM`, then `Exposure = range01(Exposure_raw)` **POOLED** (no `group_by(Sector_ID)`).
+
+- **Engine — DONE.** `R/exposure_cost.R::assemble_exposure_cost()` (pooled,
+  multiplicative; `within_sector=` flag for diagnostics). `free_alloc_share` is a
+  **per-row** column, so it already supports country- or region-level price
+  variation. Verified on synthetic data: pooled → price matters (ρ=0.50);
+  within-sector → price washes out (ρ=1, max|diff|=1e-16). Test:
+  `prototypes/test_exposure_cost.R`.
+- **CBAM leg — DONE.** `compute_cbam_leg()` → NUTS-2 × sector embodied carbon in
+  extra-EU imports of covered goods (FIGARO 2023): 2,819 cells, 235 NUTS-2,
+  259.4 Mt, 0 NAs; top cells Lombardia/NRW/Veneto/Cataluña (steel, chemicals).
+  Price factor `cbam_cov` is **EU-wide** (Reg. 2023/956) — the regulation
+  applies uniformly, so CBAM price does not vary by country.
+- **ETS leg — IN PROGRESS.** Data in hand: `Initial data/eea_t_eu-emission-
+  trading-scheme_.../ETS_Database_April_2026.xlsx` (country × `main_activity_code`
+  × year; has "1.1 Freely allocated allowances" and "2. Verified emissions").
+  **DECISION: ETS price factor varies at COUNTRY × SECTOR** —
+  `free_alloc_share[country, sector] = freely_allocated / verified`, so P_ETS
+  carries cross-country (within-sector) variation. Remaining: map EEA
+  `main_activity_code` → NACE → 12 sectors using the activity-code labels in the
+  bundled user-manual PDF (NOT from memory); handle the cross-cutting
+  "Combustion of fuels" code; join on Country_ID × Sector_ID.
+- **Vintage:** price/free-allocation = latest (2024/25); quantities at latest
+  available (FIGARO 2023, Scope 1 latest Eurostat) — document the mismatch.
