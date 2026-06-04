@@ -5,7 +5,10 @@
 #   Exposure_raw = Scope1_t x P_ETS  +  CBAM_emb_t x P_CBAM        (sum of EUR costs)
 #   P_ETS  = EUA x (1 - free_alloc_share)        (ETS, direct emissions)
 #   P_CBAM = EUA x cbam_cov                       (CBAM, imported covered goods)
-#   Exposure = range01(Exposure_raw)  POOLED across sectors (not within-sector).
+#   Exposure = range01(log1p(Exposure_raw))  POOLED (Option A; log for variability).
+#   Carbon-cost ONLY (no emissions facet -> no double-count). cbam_cov = 1 for ALL
+#   importing sectors (CBAM falls on whoever imports covered goods), so every sector
+#   gets a non-zero cost via its covered-goods imports.
 
 .eu27_codes <- function()
   c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
@@ -81,20 +84,22 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
 #'   (which makes the sector-level price wash out — for comparison)
 #' @return df plus P_ETS, P_CBAM, ETS_cost, CBAM_cost, Exposure_raw, Exposure
-assemble_exposure_cost <- function(df, eua_price = 1, within_sector = FALSE) {
+assemble_exposure_cost <- function(df, eua_price = 1, log_scale = TRUE,
+                                   within_sector = FALSE) {
   d <- df |>
     dplyr::mutate(
       P_ETS        = eua_price * (1 - free_alloc_share),
       P_CBAM       = eua_price * cbam_cov,
       ETS_cost     = (Scope1_kt * 1000) * P_ETS,
       CBAM_cost    = CBAM_emb_tCO2 * P_CBAM,
-      Exposure_raw = ETS_cost + CBAM_cost
+      Exposure_raw = ETS_cost + CBAM_cost,
+      .scaled      = if (log_scale) log1p(pmax(Exposure_raw, 0)) else Exposure_raw
     )
   if (within_sector) {
     d <- d |> dplyr::group_by(Sector_ID) |>
-      dplyr::mutate(Exposure = range01(Exposure_raw)) |> dplyr::ungroup()
+      dplyr::mutate(Exposure = range01(.scaled)) |> dplyr::ungroup()
   } else {
-    d <- d |> dplyr::mutate(Exposure = range01(Exposure_raw))   # POOLED (Option A)
+    d <- d |> dplyr::mutate(Exposure = range01(.scaled))   # POOLED (Option A)
   }
-  tibble::as_tibble(d)
+  d |> dplyr::select(-.scaled) |> tibble::as_tibble()
 }

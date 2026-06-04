@@ -279,3 +279,25 @@ sectors now spread chemicals 0.73 … textiles 0.17 (was 0.115 … 0.013). Top
 cells shift toward high-vulnerability regions (Catalonia, Attica, Lombardia);
 Spearman vs baseline 0.47 (down from 0.64 — log lets vulnerability matter more
 relative to a few huge emitters). Implemented in `prototypes/build_cost_tri.R`.
+
+## 14. OFFICIAL design — carbon cost ONLY, CBAM gate fixed (locked in)
+
+Per Giorgio: drop the emissions facet (it double-counted emissions, which already
+sit inside the carbon cost). Exposure is carbon cost only:
+`Exposure = range01(log1p( Scope1·EUA·(1−free_alloc) + CBAM_imports·EUA ))`, pooled.
+Engine: `assemble_exposure_cost(..., log_scale=TRUE)`.
+
+Two corrections make it cover all sectors:
+- **CBAM gate removed** — `cbam_cov = 1` for ALL importing sectors (CBAM falls on
+  whoever imports covered goods, not only the producer sectors C19-C20/C23/C24).
+  The earlier producer-sector gate zeroed CBAM for downstream importers — a bug.
+- Because every manufacturing sector imports some covered goods (steel/chemicals/
+  cement), each gets a non-zero CBAM input cost → **all sectors covered** without
+  any emissions facet. Verified: **11/11 sectors, 2495/2497 cells positive.**
+
+Results (2024 free-alloc, FIGARO 2023): per-sector means chemicals 0.79, machinery
+0.73 (#2, imports steel), metals 0.72 … textiles 0.55. Top cells sector-diverse and
+vulnerability-driven (Attica/Catalonia/Lombardia chemicals; Campania food/auto/
+machinery; Romania auto). Spearman vs baseline 0.56. C roll-up 227/227 (top
+Campania). Phase-out: ETS share of cost **21% → 69%** (100%→0% free-alloc; CBAM
+~79% today); ranking robust (ρ=0.98). Still a prototype; next = wire into `_targets`.
