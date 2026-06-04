@@ -7,9 +7,13 @@
 #' @param data_long    Tibble from `reshape_to_grid()`.
 #' @param empl_weights Either a path to `EMPL_Region.xlsx` or the in-memory
 #'   `empl_weights` tibble (Country_ID, NUTS_ID, Sector_ID, pers_employed, weight).
+#' @param pool If TRUE, min-max scale non-Policy indicators across the whole
+#'   panel (group by Indicator only) instead of within (Indicator x Sector_ID).
+#'   Used by the cross-sector (Option A) carbon-cost exposure. Default FALSE
+#'   preserves the within-sector baseline.
 #' @return List with `$long` (long normalised tibble) and `$wide`
 #'   (one column per indicator using Value_N).
-normalize_indicators <- function(data_long, empl_weights) {
+normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
 
   # Drop ultraperipheral / obsolete NUTS-2 regions and the helper indicator.
   data_ready <- data_long |>
@@ -148,7 +152,9 @@ normalize_indicators <- function(data_long, empl_weights) {
   }
 
   pp_norm    <- .compute_value_n(pp_data,    c("Indicator"))
-  other_norm <- .compute_value_n(other_data, c("Indicator", "Sector_ID"))
+  other_norm <- .compute_value_n(
+    other_data,
+    if (pool) c("Indicator") else c("Indicator", "Sector_ID"))
 
   # Reverse "negative" indicators (higher raw -> lower vulnerability).
   data_long_norm <- bind_rows(pp_norm, other_norm) |>

@@ -206,3 +206,33 @@ GR→EL), crosswalk `ets_activity_nace_crosswalk.csv`, FIGARO 2023, `scope1_data
    sectors); EUA scalar = 1 (ranking-irrelevant); free_alloc_share capped at 1
    (over-allocated → P_ETS = 0, no negative exposure).
 5. Next: pooled Vulnerability → full TRI; free-allocation phase-out sensitivity.
+
+## 11. Full TRI + sensitivity — done (a, b, c)
+
+`prototypes/build_cost_tri.R` → `Final data/Risk_data_carbon_cost_PROTOTYPE.csv`.
+`normalize_indicators()` gained a backward-compatible `pool=` flag.
+
+- **(b) Pooled TRI.** Exposure (cost, pooled) × Vulnerability (dimensions
+  re-normalised **pooled** over the 11 sub-sectors), `Risk = range01(√E·√V)`
+  pooled. Top cells: ITC4 (Lombardia) C19-C20 & C24, ES51 (Cataluña), German
+  chemical belt, plus high-vulnerability EL30 (Attica). Spearman vs baseline
+  within-sector TRI = 0.64 (Vulnerability carries the shared signal; exposure
+  reshuffles).
+- **(a) "C" total fixed.** C = per-region roll-up of sub-sector carbon costs,
+  range01 across regions (separate from the sub-sector pool, since C is the
+  aggregate). 235/235 non-zero; top = Lombardia.
+- **(c) Free-allocation phase-out sensitivity.** As free allocation goes
+  100%→50%→0%, the **ETS share of total carbon cost rises 35% → 72% → 82%**:
+  the index is **CBAM-dominated today, ETS-dominated after phase-out**. Ranking
+  is robust (Spearman current-vs-full-phase-out = 0.90).
+
+**KEY SCOPING CONSEQUENCE (needs a call):** only **796 of 2,497** sub-sector
+cells have positive carbon-cost risk; the other 1,701 are zero-exposure (the 7
+light sectors face neither ETS-process nor CBAM cost). So this is effectively a
+**heavy-industry carbon-cost risk index** (≈ C16-C18, C19-C20, C23, C24). This
+follows directly from "exposure = carbon cost," but it is a substantive change
+from the 12-sector baseline — decide whether that scope is intended.
+
+**Still prototype, not wired into `_targets`:** the build is a script; refactor
+`compute_fa()`/`build_tri()` into `R/exposure_cost.R` + targets once the scope
+question is settled. EUA scalar = 1 (ranking-irrelevant).
