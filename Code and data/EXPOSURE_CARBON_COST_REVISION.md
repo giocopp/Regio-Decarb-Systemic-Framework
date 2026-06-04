@@ -236,3 +236,34 @@ from the 12-sector baseline — decide whether that scope is intended.
 **Still prototype, not wired into `_targets`:** the build is a script; refactor
 `compute_fa()`/`build_tri()` into `R/exposure_cost.R` + targets once the scope
 question is settled. EUA scalar = 1 (ranking-irrelevant).
+
+## 12. Combined exposure (emissions + carbon cost) — keeps ALL sectors
+
+DECISION (supersedes the §11 scope question): Exposure is a **composite of two
+pooled facets**, not carbon cost alone:
+
+```
+Exposure = range01_pooled( w·Emissions_n  +  (1−w)·CarbonCost_n ),   w = 0.5
+  Emissions_n  = pooled-normalised mean(Scope1, Scope2, Scope3)   (ALL sectors)
+  CarbonCost_n = pooled-normalised (Scope1·P_ETS + CBAM_emb·P_CBAM) (priced sectors)
+```
+
+This resolves the original +/× question: **emissions is the additive base
+(every sector is exposed in proportion to what it emits); policy enters
+multiplicatively as carbon cost; the two facets are averaged.**
+
+Result (`prototypes/build_cost_tri.R` → `Final data/Risk_data_carbon_cost_PROTOTYPE.csv`):
+- **2,496 / 2,497 cells positive** (was 796) — **all 11 sub-sectors covered**.
+  Per-sector mean exposure: C19-C20 > C24 > C23 > C10-C12 (food) > … >
+  C13-C15 (textiles). Heavy industry tops; light sectors retained via emissions.
+- Spearman vs baseline TRI = 0.64; vs **emissions-only = 0.95** (policy/cost
+  still shifts the ranking but the index is emissions-dominated at w=0.5).
+- Phase-out sensitivity still holds (Spearman current-vs-full = 0.99; less
+  sensitive than the cost-only index because cost is now a smaller share).
+
+**Key tunable:** `w` (emissions vs carbon-cost weight). w=0.5 → emissions-
+dominated; lower w → policy matters more. Decide the weight (or report a small
+sensitivity over w).
+
+**Next:** pick `w`; refactor prototype → `R/exposure_cost.R` + `_targets`;
+maps/figures; optional EUA € value for an interpretable cost.

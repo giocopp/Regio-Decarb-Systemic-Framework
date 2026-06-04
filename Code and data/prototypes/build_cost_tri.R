@@ -38,15 +38,19 @@ ghg <- readRDS("Initial data/Non sector data/FIGARO_env_ac_ghgfp_2023.rds")
 cbam <- compute_cbam_leg(io, ghg, ew) |> select(NUTS_ID, Sector_ID, CBAM_emb_tCO2)
 cbam_cov_tab <- tibble::tibble(Sector_ID=c("C19-C20","C23","C24"), cbam_cov=1)
 
-# pooled Vulnerability (built once; independent of free-alloc)
+# pooled-normalized indicators (for Vulnerability AND the emissions facet)
 vw <- normalize_indicators(filter(dr, Sector_ID!="C"), ew, pool=TRUE)$wide
 for (nm in names(dims)) { vars<-intersect(dims[[nm]],names(vw))
   for (vv in vars) vw <- impute_with_median(vw, vv)
   vw[[paste0("Vuln_",nm)]] <- rowMeans(select(vw, all_of(vars)), na.rm=TRUE) }
 vw <- vw |> mutate(Vulnerability = range01(rowMeans(across(starts_with("Vuln_")), na.rm=TRUE)))
 vsel <- vw |> select(NUTS_ID, Country_ID, Sector_ID, Vulnerability)
+# emissions facet = pooled-normalized mean of the 3 scopes (ALL sectors)
+em_facet <- vw |> transmute(NUTS_ID, Country_ID, Sector_ID,
+  emis_facet = rowMeans(across(any_of(c("Scope1_Emissions","Scope2_Emissions","Scope3_Emissions"))), na.rm=TRUE))
 
-build_tri <- function(mult=1) {
+# Exposure = normalize( w_emis*emissions  +  (1-w_emis)*carbon_cost ), pooled
+build_tri <- function(mult=1, w_emis=0.5) {
   fa <- compute_fa(mult)
   df <- s1 |> filter(Sector_ID!="C") |>
     left_join(fa, by=c("Country_ID","Sector_ID")) |>
@@ -54,53 +58,48 @@ build_tri <- function(mult=1) {
     left_join(cbam_cov_tab, by="Sector_ID") |>
     mutate(free_alloc_share=coalesce(free_alloc_share,1),
            CBAM_emb_tCO2=coalesce(CBAM_emb_tCO2,0), cbam_cov=coalesce(cbam_cov,0))
-  e <- assemble_exposure_cost(df)
-  e |> inner_join(vsel, by=c("NUTS_ID","Country_ID","Sector_ID")) |>
+  assemble_exposure_cost(df) |>
+    left_join(em_facet, by=c("NUTS_ID","Country_ID","Sector_ID")) |>
+    mutate(cost_facet = Exposure,
+           Exposure = range01(w_emis*emis_facet + (1-w_emis)*cost_facet)) |>   # COMBINED, pooled
+    inner_join(vsel, by=c("NUTS_ID","Country_ID","Sector_ID")) |>
     mutate(E=if_else(Exposure==0,NA_real_,Exposure),
            Risk_raw=sqrt(E)*sqrt(Vulnerability), Risk_norm=range01(Risk_raw))
 }
 
 tri <- build_tri(1)
-cat("=== full pooled TRI (mult=1): rows", nrow(tri), "NAs Risk", sum(is.na(tri$Risk_norm)), "===\n")
+cat("=== combined-exposure TRI: rows", nrow(tri),
+    "| positive risk:", sum(!is.na(tri$Risk_norm)),
+    "| sectors covered:", n_distinct(tri$Sector_ID[!is.na(tri$Risk_norm)]), "===\n")
 base <- read.csv("Final data/Risk_data.csv") |> select(NUTS_ID, Sector_ID, Risk_base=Risk_norm)
 cmp <- tri |> inner_join(base, by=c("NUTS_ID","Sector_ID")) |> filter(!is.na(Risk_norm)&!is.na(Risk_base))
-cat("Spearman(new pooled TRI, baseline within-sector TRI):", round(cor(cmp$Risk_norm,cmp$Risk_base,method="spearman"),3),"\n")
-cat("\nTop 10 TRI cells (pooled):\n")
+cat("Spearman(combined TRI, baseline):", round(cor(cmp$Risk_norm,cmp$Risk_base,method="spearman"),3),"\n")
+
+# does policy still matter? compare combined (w=.5) vs emissions-only (w=1)
+e_only <- build_tri(1, w_emis=1) |> select(NUTS_ID,Sector_ID,r_emis=Risk_norm)
+chk <- tri |> select(NUTS_ID,Sector_ID,r=Risk_norm) |> inner_join(e_only,by=c("NUTS_ID","Sector_ID")) |>
+  filter(!is.na(r)&!is.na(r_emis))
+cat("Spearman(combined vs emissions-only):", round(cor(chk$r,chk$r_emis,method="spearman"),3),
+    " -> <1 means policy/cost still shifts the ranking\n")
+
+cat("\nPer-sector mean exposure (all sectors now covered):\n")
+print(tri |> group_by(Sector_ID) |> summarise(mean_expo=round(mean(Exposure,na.rm=TRUE),3),
+      n_pos=sum(!is.na(Risk_norm))) |> arrange(desc(mean_expo)))
+
+cat("\nTop 10 TRI cells:\n")
 print(tri |> arrange(desc(Risk_norm)) |> head(10) |>
       transmute(NUTS_ID,Sector_ID,Exposure=round(Exposure,3),Vulnerability=round(Vulnerability,3),Risk_norm=round(Risk_norm,3)))
 
-# (a) C roll-up check
-Ce <- build_tri(1)  # reuse e via tri? recompute exposure raw:
-fa1 <- compute_fa(1)
-eC <- s1 |> filter(Sector_ID!="C") |> left_join(fa1,by=c("Country_ID","Sector_ID")) |>
-  left_join(cbam,by=c("NUTS_ID","Sector_ID")) |> left_join(cbam_cov_tab,by="Sector_ID") |>
-  mutate(free_alloc_share=coalesce(free_alloc_share,1),CBAM_emb_tCO2=coalesce(CBAM_emb_tCO2,0),cbam_cov=coalesce(cbam_cov,0)) |>
-  assemble_exposure_cost() |> group_by(NUTS_ID) |>
-  summarise(raw=sum(ETS_cost+CBAM_cost), .groups="drop") |> mutate(Exposure_C=range01(raw))
-cat("\n(a) C roll-up: non-zero C exposure cells:", sum(eC$Exposure_C>0), "/ ", nrow(eC),
-    " | top C region:", eC$NUTS_ID[which.max(eC$Exposure_C)], "\n")
+# (c) phase-out sensitivity (on combined exposure)
+t05<-build_tri(0.5); t0<-build_tri(0.0)
+j <- tri|>select(NUTS_ID,Sector_ID,r1=Risk_norm)|>inner_join(t05|>select(NUTS_ID,Sector_ID,r05=Risk_norm),by=c("NUTS_ID","Sector_ID"))|>
+  inner_join(t0|>select(NUTS_ID,Sector_ID,r0=Risk_norm),by=c("NUTS_ID","Sector_ID"))|>filter(!is.na(r1)&!is.na(r0))
+cat("\n(c) phase-out Spearman current vs 50%:",round(cor(j$r1,j$r05,method="spearman"),3),
+    " vs full:",round(cor(j$r1,j$r0,method="spearman"),3),"\n")
 
-# (c) free-allocation phase-out sensitivity
-cat("\n=== (c) Free-allocation phase-out sensitivity ===\n")
-t1 <- build_tri(1.0); t05 <- build_tri(0.5); t0 <- build_tri(0.0)
-j <- t1 |> select(NUTS_ID,Sector_ID,r1=Risk_norm) |>
-  inner_join(t05|>select(NUTS_ID,Sector_ID,r05=Risk_norm),by=c("NUTS_ID","Sector_ID")) |>
-  inner_join(t0|>select(NUTS_ID,Sector_ID,r0=Risk_norm),by=c("NUTS_ID","Sector_ID")) |>
-  filter(!is.na(r1)&!is.na(r0))
-cat("Spearman(current vs 50% phase-out):", round(cor(j$r1,j$r05,method="spearman"),3),
-    " | (current vs full phase-out):", round(cor(j$r1,j$r0,method="spearman"),3),"\n")
-shareETS <- function(m){fa<-compute_fa(m); d<-s1|>filter(Sector_ID!="C")|>left_join(fa,by=c("Country_ID","Sector_ID"))|>
-  left_join(cbam,by=c("NUTS_ID","Sector_ID"))|>left_join(cbam_cov_tab,by="Sector_ID")|>
-  mutate(free_alloc_share=coalesce(free_alloc_share,1),CBAM_emb_tCO2=coalesce(CBAM_emb_tCO2,0),cbam_cov=coalesce(cbam_cov,0))|>
-  assemble_exposure_cost(); sum(d$ETS_cost)/sum(d$ETS_cost+d$CBAM_cost)}
-cat("ETS share of total carbon cost:  mult=1.0:",round(shareETS(1),3)," 0.5:",round(shareETS(.5),3)," 0.0:",round(shareETS(0),3),"\n")
-
-# write prototype output
-out <- tri |> mutate(Risk_Band = ifelse(is.na(Risk_norm),"Zero Risk",
-  as.character(cut(Risk_norm, seq(0,1,.2), include.lowest=TRUE,
-    labels=c("Very Low","Low","Medium","High","Very High"))))) |>
-  select(NUTS_ID, Country_ID, Sector_ID, Scope1_kt, free_alloc_share, CBAM_emb_tCO2,
-         ETS_cost, CBAM_cost, Exposure, Vulnerability, Risk_norm, Risk_Band)
-write.csv(out, "Final data/Risk_data_carbon_cost_PROTOTYPE.csv", row.names=FALSE)
-cat("\nwrote PROTOTYPE csv:", nrow(out), "rows;",
-    sum(out$Risk_Band!="Zero Risk"), "with positive carbon-cost risk\n")
+# write prototype output (all sectors)
+out <- tri |> mutate(Risk_Band=ifelse(is.na(Risk_norm),"Zero Risk",
+  as.character(cut(Risk_norm,seq(0,1,.2),include.lowest=TRUE,labels=c("Very Low","Low","Medium","High","Very High"))))) |>
+  select(NUTS_ID,Country_ID,Sector_ID,Scope1_kt,free_alloc_share,CBAM_emb_tCO2,emis_facet,cost_facet,Exposure,Vulnerability,Risk_norm,Risk_Band)
+write.csv(out,"Final data/Risk_data_carbon_cost_PROTOTYPE.csv",row.names=FALSE)
+cat("\nwrote PROTOTYPE csv:",nrow(out),"rows;",sum(out$Risk_Band!="Zero Risk"),"with positive risk\n")
