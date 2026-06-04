@@ -267,3 +267,15 @@ sensitivity over w).
 
 **Next:** pick `w`; refactor prototype → `R/exposure_cost.R` + `_targets`;
 maps/figures; optional EUA € value for an interpretable cost.
+
+## 13. Log transform on the exposure facets
+
+Both facets are right-skewed (a few mega-emitters dominate), so plain min-max
+crushed most cells near 0. Each facet is now `rescale(log1p(raw))` before the
+0.5/0.5 average: `Exposure = rescale( 0.5·rescale(log Emissions) +
+0.5·rescale(log CarbonCost) )` (log1p preserves true zeros). Effect (verified):
+Exposure **sd 0.06 → 0.22**, **IQR 0.03 → 0.37** — much more variability;
+sectors now spread chemicals 0.73 … textiles 0.17 (was 0.115 … 0.013). Top
+cells shift toward high-vulnerability regions (Catalonia, Attica, Lombardia);
+Spearman vs baseline 0.47 (down from 0.64 — log lets vulnerability matter more
+relative to a few huge emitters). Implemented in `prototypes/build_cost_tri.R`.
