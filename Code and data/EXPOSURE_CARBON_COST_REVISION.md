@@ -103,3 +103,43 @@ allowances, *not* the market price — the EUA price comes from EEX/EEA/Ember).
 - [ ] Obtain the EUA annual price series and chosen reference year.
 - [ ] Locate the public free-allocation benchmark shares per sector.
 - [ ] Confirm CBAM product list → NACE mapping for the import term.
+
+## 8. Updates — 2026-06 (decisions resolved + verified data facts)
+
+**Normalisation (open decision #1): RESOLVED → (a).** Pool **both** Exposure
+and Vulnerability for the primary cross-sector Risk; within-sector rankings are
+a stratified analysis layer in the paper.
+
+**Exposure = two priced terms (not "EUTL emissions" alone):**
+- **ETS (direct):** from EUTL, `(verified_emissions − free_allocation) ×
+  EUA_price`. The point of EUTL is that it carries **both** verified emissions
+  **and** free allocation — use the free-allocation field; this is the ETS
+  *cost*, not raw emissions.
+- **CBAM (imports):** covered-goods imports × embedded carbon intensity ×
+  EUA, built on the FIGARO / `Import_ExtraEU` machinery. **OPEN — direction:**
+  CBAM is a *cost* to EU importers of covered goods but *protection* for EU
+  *producers* of covered goods (offsets leakage as free allocation phases out).
+  Decide which channel the index represents (mirrors the `Export_ExtraEU`
+  direction debate Reviewer 2 raised).
+
+**EUTL — verified facts (web search, 2026-06):**
+- Fields present: activity type, physical address, verified emissions,
+  allocated + surrendered allowances → emissions **and** free allocation. Good.
+- **No native NACE.** EUTL uses its own ETS activity classification, *distinct
+  from NACE*. Needs an ETS-activity→NACE crosswalk (or a curated source, e.g.
+  Jan Abrell's EUETS.info) and validation against our 12 aggregates; not 1:1.
+- **No pre-coded NUTS.** Installations carry a physical address → must geocode
+  to NUTS-2. This is exactly what buys the regional ETS-cost distribution, but
+  it is real work.
+- **Covered subset only.** ETS ≈ 36% of EU GHG; 20 MW combustion threshold +
+  listed heavy activities (steel, cement, lime, glass, ceramics, pulp/paper,
+  aluminium, refineries, petrochemicals, ammonia/nitric/adipic). Light sectors
+  (textiles, electronics, motor vehicles, food) are largely absent → near-zero
+  ETS cost. This is *correct* for a cost measure, and means heavy industry will
+  dominate the cross-sector Exposure gradient (the gradient within-sector
+  normalisation was hiding).
+
+**Recommended sequencing:** build and validate the **ETS term first** (EUTL net
+cost → pooled cross-sector index; compare Spearman vs baseline TRI), **then**
+add the CBAM term (harder data + unresolved direction). De-risks the more
+debatable piece.
