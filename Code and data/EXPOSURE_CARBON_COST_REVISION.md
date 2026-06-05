@@ -301,3 +301,29 @@ vulnerability-driven (Attica/Catalonia/Lombardia chemicals; Campania food/auto/
 machinery; Romania auto). Spearman vs baseline 0.56. C roll-up 227/227 (top
 Campania). Phase-out: ETS share of cost **21% → 69%** (100%→0% free-alloc; CBAM
 ~79% today); ranking robust (ρ=0.98). Still a prototype; next = wire into `_targets`.
+(Numbers in this section are PRE-audit-fix; superseded by §15.)
+
+## 15. Audit fixes (2026-06-05) — all verified
+
+A correctness audit found and fixed three things:
+- **ETS quantity → EEA verified emissions** (not Eurostat total Scope 1). The
+  free-allocation discount comes from EEA ETS-covered verified emissions, so the
+  quantity it multiplies must be the same base. `assemble_exposure_cost()` now
+  takes `ets_emis_t` (verified, tonnes; no ×1000). Effect: ETS leg shrinks → ETS
+  share of cost **16% / 48% / 63%** at 100/50/0% free-allocation (CBAM ~84% today).
+- **Croatia restored.** The build had used raw `scope1_data` (old NUTS-2013
+  HR02/05/06). Now the ETS quantity is downscaled on a Croatia-recombined
+  `empl_weights` (HR02/05/06→HR04) and the index is built on the 230-region
+  Vulnerability grid → **2,760 cells (230×12)**, matching the documented design
+  (was 227 regions).
+- **CBAM "C" double-count removed.** `compute_cbam_leg()` no longer appends a "C"
+  aggregate (it had returned subs + C = sum-of-subs, doubling the raw total to
+  518 Mt; correct = **259 Mt over 11 sub-sectors**). C is rolled up by the caller.
+- **Scope 1/2/3 retained for analysis only** — kept as columns in the output CSV,
+  not used in the index (only ETS-on-verified + CBAM-on-imports are priced).
+
+Re-audit: ALL PASS (CBAM 259 Mt / 11 subs; engine units; 2760 rows; 230 regions
+incl HR04; S1/S2/S3 columns present; Risk in [0,1]). Current results: per-sector
+means chemicals 0.77, machinery 0.73 … textiles 0.55; top cells Attica/Catalonia/
+Lombardia (chemicals), Campania (food/auto/machinery), Romania (auto); Spearman vs
+baseline 0.56; phase-out ρ=0.99.

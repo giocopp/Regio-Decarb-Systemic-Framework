@@ -2,7 +2,8 @@
 # Functions only; NOT yet wired into _targets.R. Depends on range01() and
 # downscale_national_to_nuts2() from utils.R.
 #
-#   Exposure_raw = Scope1_t x P_ETS  +  CBAM_emb_t x P_CBAM        (sum of EUR costs)
+#   Exposure_raw = ETS_emis_t x P_ETS  +  CBAM_emb_t x P_CBAM      (sum of EUR costs)
+#   ETS_emis_t = EEA ETS-covered VERIFIED emissions (tonnes), NOT total Scope 1
 #   P_ETS  = EUA x (1 - free_alloc_share)        (ETS, direct emissions)
 #   P_CBAM = EUA x cbam_cov                       (CBAM, imported covered goods)
 #   Exposure = range01(log1p(Exposure_raw))  POOLED (Option A; log for variability).
@@ -35,7 +36,8 @@
 #' @param ghg FIGARO ghg tibble (c_orig, c_dest, nace_r2, values), kt CO2eq
 #' @param empl_weights tibble (Country_ID, NUTS_ID, Sector_ID, weight)
 #' @param covered_goods FIGARO origin industries treated as CBAM-covered
-#' @return tibble NUTS_ID, Country_ID, Sector_ID, CBAM_emb_tCO2
+#' @return tibble NUTS_ID, Country_ID, Sector_ID, CBAM_emb_tCO2 (11 manufacturing
+#'   sub-sectors only; the "C" total is rolled up by the caller, not here)
 compute_cbam_leg <- function(io, ghg, empl_weights,
                              covered_goods = c("C20","C23","C24"),
                              eu27 = .eu27_codes()) {
@@ -65,11 +67,8 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
     dplyr::left_join(nace_map, by = c("ind_use" = "ind")) |>
     dplyr::group_by(Country_ID = c_dest, Sector_ID) |>
     dplyr::summarise(CBAM_emb_tCO2 = sum(emb_tCO2, na.rm = TRUE), .groups = "drop")
-  cbam <- dplyr::bind_rows(
-    cbam,
-    cbam |> dplyr::group_by(Country_ID) |>
-      dplyr::summarise(Sector_ID = "C",
-                       CBAM_emb_tCO2 = sum(CBAM_emb_tCO2), .groups = "drop"))
+  # 11 sub-sectors only — no "C" aggregate here (the caller rolls it up, so we
+  # avoid a double-counting total row in this function's output).
 
   downscale_national_to_nuts2(cbam, empl_weights, "CBAM_emb_tCO2") |>
     tibble::as_tibble()
@@ -77,8 +76,9 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
 
 #' Assemble pooled, multiplicative carbon-cost-at-risk Exposure.
 #'
-#' @param df tibble with NUTS_ID, Country_ID, Sector_ID, Scope1_kt,
-#'   free_alloc_share, CBAM_emb_tCO2, cbam_cov
+#' @param df tibble with NUTS_ID, Country_ID, Sector_ID, ets_emis_t
+#'   (EEA ETS-covered verified emissions, tonnes), free_alloc_share,
+#'   CBAM_emb_tCO2, cbam_cov
 #' @param eua_price scalar EUA EUR/tCO2 (default 1; a common scalar -> does not
 #'   affect the ranking, only the EUR interpretation)
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
@@ -90,7 +90,7 @@ assemble_exposure_cost <- function(df, eua_price = 1, log_scale = TRUE,
     dplyr::mutate(
       P_ETS        = eua_price * (1 - free_alloc_share),
       P_CBAM       = eua_price * cbam_cov,
-      ETS_cost     = (Scope1_kt * 1000) * P_ETS,
+      ETS_cost     = ets_emis_t * P_ETS,
       CBAM_cost    = CBAM_emb_tCO2 * P_CBAM,
       Exposure_raw = ETS_cost + CBAM_cost,
       .scaled      = if (log_scale) log1p(pmax(Exposure_raw, 0)) else Exposure_raw
