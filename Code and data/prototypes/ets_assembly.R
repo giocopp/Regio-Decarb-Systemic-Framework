@@ -1,3 +1,5 @@
+# SUPERSEDED by the EUTL geocoded build (prototypes/ets_geocode.R + the
+# Phase-5b targets); EEA-database ETS leg kept for comparison.
 suppressMessages({library(dplyr); library(tidyr); library(readxl); library(targets)})
 source("R/utils.R"); source("R/exposure_cost.R")
 
@@ -33,7 +35,10 @@ print(fa |> group_by(Sector_ID) |>
                 n_countries=n(), verified_Mt=round(sum(verified)/1e6,1)))
 
 # ── Assemble ──
-s1 <- tar_read(scope1_data) |> select(Country_ID, NUTS_ID, Sector_ID, Scope1_kt = Value)
+# engine expects tonnes (ets_emis_t); scope1_data Value is kt CO2eq
+s1 <- tar_read(scope1_data) |>
+  select(Country_ID, NUTS_ID, Sector_ID, Scope1_kt = Value) |>
+  mutate(ets_emis_t = Scope1_kt * 1000)
 io  <- readRDS("Initial data/Non sector data/FIGARO_naio_10_fcp_ii4_2023.rds")
 ghg <- readRDS("Initial data/Non sector data/FIGARO_env_ac_ghgfp_2023.rds")
 cbam <- compute_cbam_leg(io, ghg, tar_read(empl_weights)) |>

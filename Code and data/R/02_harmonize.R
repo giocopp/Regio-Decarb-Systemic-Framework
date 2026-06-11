@@ -312,7 +312,8 @@ harmonize_sector <- function(file_paths, non_sector_data, empl_weights) {
                                "C31-C33", Sector_ID)) |>
     group_by(Country_ID, NUTS_ID, NUTS_Name, Sector_ID, Sector_Name,
              Component, Dimension, Indicator, Unit) |>
-    summarise(Value   = sum(Value, na.rm = TRUE),
+    summarise(Value   = if (all(is.na(Value))) NA_real_
+                        else sum(Value, na.rm = TRUE),
               Value_N = NA_real_,
               .groups = "drop")
 

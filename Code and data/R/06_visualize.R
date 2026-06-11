@@ -318,3 +318,60 @@ plot_radar_charts <- function(risk_data, output_dir,
 
   invisible(saved)
 }
+
+
+#' Carbon-cost TRI three-panel map (Total Manufacturing):
+#' Exposure | Vulnerability | Risk
+#'
+#' @param risk_data_cost Tibble from build_risk_data_cost()
+#' @param output_dir Character path for saving the PNG
+#' @return Path of the saved file
+plot_cost_tri_maps <- function(risk_data_cost, output_dir) {
+
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  layers <- .get_map_layers()
+
+  # recombine Croatia in the map layer to match the 230-region grid
+  nuts2 <- layers$nuts2 |>
+    dplyr::mutate(NUTS_ID = ifelse(NUTS_ID %in% c("HR02", "HR05", "HR06"),
+                                   "HR04", NUTS_ID)) |>
+    dplyr::group_by(NUTS_ID) |>
+    dplyr::summarise(geometry = sf::st_union(geometry), .groups = "drop") |>
+    sf::st_make_valid()
+
+  C_rows <- risk_data_cost |>
+    dplyr::filter(Sector_ID == "C") |>
+    dplyr::mutate(Exposure = ifelse(Exposure == 0, NA_real_, Exposure))
+  mC <- nuts2 |>
+    dplyr::left_join(C_rows, by = "NUTS_ID") |>
+    sf::st_transform(.crs_lambert)
+
+  ttl <- function(t) list(
+    ggplot2::ggtitle(t),
+    ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5,
+                                                      face = "bold"))
+  )
+  p1 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Exposure",
+                    "Exposure", RColorBrewer::brewer.pal(7, "Purples")) +
+    ttl("Exposure")
+  p2 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Vulnerability",
+                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues")) +
+    ttl("Vulnerability")
+  p3 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Risk_norm",
+                    "Risk", RColorBrewer::brewer.pal(7, "Reds")) +
+    ttl("Risk")
+
+  combo <- (p1 | p2 | p3) + patchwork::plot_annotation(
+    title = paste("Total Manufacturing - carbon-cost-at-risk",
+                  "(geocoded ETS + CBAM, full phase-in)"),
+    theme = ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 14, face = "bold",
+                                         hjust = 0.5))
+  )
+
+  outfile <- file.path(output_dir,
+                       "Figure_exposure_carboncost_total_manufacturing.png")
+  ggplot2::ggsave(outfile, combo, width = 14, height = 5, dpi = 600,
+                  bg = "white")
+  outfile
+}

@@ -6,4 +6,3 @@ Data about the EU emission trading system (ETS). The EU ETS data viewer provides
 
 
 [More information](https://sdi.eea.europa.eu/catalogue/srv/api/records/24567358-d375-4dff-87d7-d9943c68f5e0)
-    

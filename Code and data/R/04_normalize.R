@@ -28,42 +28,8 @@ normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
   }
 
   # NUTS-2013 -> NUTS-2021 recombinations for employment data (mirroring the
-  # reshape step in 03_reshape.R).
-  hr04_empl <- empl_data |>
-    filter(NUTS_ID %in% c("HR02", "HR05", "HR06")) |>
-    group_by(Country_ID, Sector_ID) |>
-    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
-              weight        = sum(weight, na.rm = TRUE),
-              .groups = "drop") |>
-    mutate(NUTS_ID = "HR04")
-
-  nl_remap <- empl_data |>
-    filter(NUTS_ID %in% c("NL35", "NL36")) |>
-    mutate(NUTS_ID = case_when(
-      NUTS_ID == "NL35" ~ "NL31",
-      NUTS_ID == "NL36" ~ "NL33",
-      TRUE              ~ NUTS_ID
-    ))
-
-  pt_remap <- empl_data |>
-    filter(NUTS_ID %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
-    mutate(target = case_when(
-      NUTS_ID %in% c("PT19", "PT1D") ~ "PT16",
-      NUTS_ID %in% c("PT1A", "PT1B") ~ "PT17",
-      NUTS_ID == "PT1C"              ~ "PT18",
-      TRUE                           ~ NUTS_ID
-    )) |>
-    group_by(Country_ID, Sector_ID, target) |>
-    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
-              weight        = sum(weight, na.rm = TRUE),
-              .groups = "drop") |>
-    rename(NUTS_ID = target)
-
-  obsolete_nuts <- c("HR02", "HR05", "HR06", "NL35", "NL36",
-                     "PT19", "PT1A", "PT1B", "PT1C", "PT1D")
-  empl_data <- empl_data |>
-    filter(!NUTS_ID %in% obsolete_nuts) |>
-    bind_rows(hr04_empl, nl_remap, pt_remap)
+  # reshape step in 03_reshape.R). Shared helper in utils.R.
+  empl_data <- recombine_empl_nuts(empl_data)
 
   # Per-employee normalisation for GFCF and BERD only — the other extensive
   # indicators are already downscaled by employment shares upstream.
@@ -141,8 +107,9 @@ normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
         ),
         Value_N = case_when(
           is.na(Value)                                 ~ NA_real_,
-          max_val - min_val == 0                       ~ 0.5,
+          # true-zero rule precedes the constant rule (all-zero group -> 0)
           Indicator == "Scope1_Emissions" & Value == 0 ~ 0.00,
+          max_val - min_val == 0                       ~ 0.5,
           Value == min_val                             ~ 0.01,
           Value == max_val                             ~ 0.99,
           TRUE                                         ~ 0.01 + norm0_1 * 0.98

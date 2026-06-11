@@ -8,7 +8,7 @@
 
 # ── Constants ────────────────────────────────────────────────────────────────
 EXPOSURE_VARS <- c("Scope1_Emissions", "Scope2_Emissions",
-                   "Scope3_Emissions", "Policy_Pressure")
+                   "Scope3_Emissions")
 VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour",
                "Vuln_Supply_Chain", "Vuln_Technology",
                "Vuln_Institutions", "Vuln_Diversification")
@@ -16,8 +16,7 @@ VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour",
 EXPOSURE_PRETTY <- c(
   Scope1_Emissions = "Scope 1",
   Scope2_Emissions = "Scope 2",
-  Scope3_Emissions = "Scope 3",
-  Policy_Pressure  = "Policy Pressure"
+  Scope3_Emissions = "Scope 3"
 )
 VULN_PRETTY <- c(
   Vuln_Energy          = "Energy",
@@ -99,8 +98,7 @@ build_top_bottom_table <- function(risk_data, k = 5L) {
       Top_Vulnerability_Driver,
       Scope1 = round(Scope1_Emissions, 3),
       Scope2 = round(Scope2_Emissions, 3),
-      Scope3 = round(Scope3_Emissions, 3),
-      Policy_Pressure = round(Policy_Pressure, 3)
+      Scope3 = round(Scope3_Emissions, 3)
     ) |>
     dplyr::arrange(Sector_ID,
                    factor(Rank_Position,

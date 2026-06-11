@@ -9,8 +9,10 @@
 #'   scores, Vulnerability, Risk_norm, and Risk_Band.
 aggregate_risk <- function(norm_wide) {
 
+  # Policy_Pressure excluded: a per-sector constant cancels exactly under
+  # the within-sector range01 re-scaling below (METHODOLOGY §10.2)
   exposure_vars <- c("Scope1_Emissions", "Scope2_Emissions",
-                     "Scope3_Emissions", "Policy_Pressure")
+                     "Scope3_Emissions")
 
   dimensions <- list(
     Energy          = c("Energy_Consumption", "Fossil_Share",

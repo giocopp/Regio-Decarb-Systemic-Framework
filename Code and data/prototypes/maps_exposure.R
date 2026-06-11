@@ -1,10 +1,10 @@
-# Maps for the geocoded carbon-cost-at-risk TRI: Total Manufacturing (C) choropleths
-# and a plant-level point map from the EUTL coordinates. Styling from R/06_visualize.R.
+# Maps for the geocoded carbon-cost-at-risk TRI. The choropleth is now a
+# pipeline target (figure_cost_maps); only the plant point map is prototype-only.
 suppressMessages({library(dplyr); library(sf); library(ggplot2); library(patchwork)})
 source("R/06_visualize.R")
 OUT <- "Figures"; dir.create(OUT, showWarnings = FALSE)
 
-tri    <- read.csv("Final data/Risk_data_carbon_cost_PROTOTYPE.csv", stringsAsFactors = FALSE)
+tri    <- read.csv("Final data/Risk_data_carbon_cost.csv", stringsAsFactors = FALSE)
 layers <- .get_map_layers()
 nuts2 <- layers$nuts2 |>                          # recombine Croatia to match the grid (-> HR04)
   mutate(NUTS_ID = ifelse(NUTS_ID %in% c("HR02","HR05","HR06"), "HR04", NUTS_ID)) |>

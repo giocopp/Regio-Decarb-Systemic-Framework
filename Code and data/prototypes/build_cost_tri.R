@@ -1,3 +1,5 @@
+# SUPERSEDED by the Phase-5b targets in _targets.R + R/exposure_cost.R;
+# kept as the historical exploration record.
 # Carbon-cost-at-risk TRI (prototype). Exposure = ETS cost + CBAM cost, min-max (env TRI_NORM=rank optional),
 # pooled; headline at full phase-in (free_alloc=0). ETS leg geocoded (prototypes/ets_geocode.R).
 suppressMessages({library(dplyr); library(tidyr); library(readxl); library(targets)})

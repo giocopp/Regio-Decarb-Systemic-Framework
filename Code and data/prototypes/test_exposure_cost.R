@@ -21,7 +21,7 @@ cat("\n######## (1) Engine: pooled vs within-sector (synthetic) ########\n")
 syn <- expand.grid(Sector_ID = c("A","B","C"), reg = 1:4,
                    stringsAsFactors = FALSE) |>
   mutate(NUTS_ID = paste0(Sector_ID, reg), Country_ID = "XX",
-         Scope1_kt = 100*reg + 10, CBAM_emb_tCO2 = 0, cbam_cov = 0,
+         ets_emis_t = 100*reg + 10, CBAM_emb_tCO2 = 0, cbam_cov = 0,
          free_alloc_share = c(A=0.9, B=0.5, C=0.1)[Sector_ID])
 syn_uniform <- syn |> mutate(free_alloc_share = 0.5)   # price made sector-flat
 
@@ -39,4 +39,4 @@ cat("WITHIN  Spearman(real-price vs uniform-price):", round(rs(wA, wU), 4),
 
 cat("\nIllustration (pooled exposure, real price) — high-free-alloc sector A should rank below low-free-alloc C at equal emissions:\n")
 print(assemble_exposure_cost(syn) |> arrange(desc(Exposure)) |>
-      select(Sector_ID, reg, Scope1_kt, free_alloc_share, P_ETS, Exposure) |> head(6))
+      select(Sector_ID, reg, ets_emis_t, free_alloc_share, P_ETS, Exposure) |> head(6))

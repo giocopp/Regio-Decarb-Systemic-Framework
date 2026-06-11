@@ -157,10 +157,11 @@ reshape_to_grid <- function(all_data_long, agg_rules) {
     group_by(Country_ID, target, Sector_ID, Sector_Name,
              Component, Dimension, Indicator, Unit, agg_fun) |>
     summarise(
-      Value     = if (first(agg_fun) == "sum")
-                    sum(Value, na.rm = TRUE)
-                  else
-                    mean(Value, na.rm = TRUE),
+      Value     = if (first(agg_fun) == "sum") {
+                    if (all(is.na(Value))) NA_real_ else sum(Value, na.rm = TRUE)
+                  } else {
+                    if (all(is.na(Value))) NA_real_ else mean(Value, na.rm = TRUE)
+                  },
       Notes     = first(Notes[!is.na(Notes)], default = NA_character_),
       NUTS_Name = first(NUTS_Name[!is.na(NUTS_Name)], default = NA_character_),
       .groups   = "drop"

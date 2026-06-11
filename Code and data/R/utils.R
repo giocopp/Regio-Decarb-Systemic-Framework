@@ -1,15 +1,30 @@
 # utils.R — shared constants and helpers used across the pipeline.
 
-#' Min-max rescale to [0.01, 0.99], preserving true zeros
+#' Min-max rescale to [0.01, 0.99]
 #'
 #' @param x Numeric vector
-#' @return Numeric vector scaled to [0.01, 0.99]; zeros stay at 0
-range01 <- function(x) {
+#' @param preserve_zeros If TRUE (default), raw zeros map to 0 instead of
+#'   the 0.01 floor. Set FALSE when 0 on the input scale is arbitrary
+#'   (e.g. z-scores, where 0 is the mean, not "nothing").
+#' @return Numeric vector scaled to [0.01, 0.99]; NAs preserved
+range01 <- function(x, preserve_zeros = TRUE) {
   rng <- range(x, na.rm = TRUE)
-  if (diff(rng) == 0) return(rep(0.50, length(x)))
+  if (diff(rng) == 0) {
+    out <- rep(0.50, length(x))
+    out[is.na(x)] <- NA_real_
+    return(out)
+  }
   scaled <- 0.01 + 0.98 * (x - rng[1]) / diff(rng)
-  scaled[x == 0] <- 0
+  if (preserve_zeros) scaled[!is.na(x) & x == 0] <- 0
   scaled
+}
+
+#' Percentile rank to (0, 1), NA-safe (ties averaged)
+prank <- function(x) {
+  ok  <- !is.na(x)
+  out <- rep(NA_real_, length(x))
+  out[ok] <- (rank(x[ok], ties.method = "average") - 0.5) / sum(ok)
+  out
 }
 
 #' Winsorize at upper percentile (cap outliers)
@@ -274,6 +289,53 @@ downscale_national_to_nuts2 <- function(national_df,
     dplyr::filter(!is.na(weight)) |>
     dplyr::filter(dplyr::if_any(dplyr::all_of(value_cols), ~ !is.na(.))) |>
     dplyr::select(Country_ID, NUTS_ID, Sector_ID, dplyr::all_of(value_cols))
+}
+
+
+#' NUTS recombination for the employment-weights tibble (HR02+HR05+HR06 ->
+#' HR04; NL35/NL36 -> NL31/NL33; PT19/1A/1B/1C/1D -> PT16/17/18), mirroring
+#' the indicator-level recombination in 03_reshape.R.
+#'
+#' @param empl_data Tibble (Country_ID, NUTS_ID, Sector_ID, pers_employed, weight).
+#' @return Same schema on the NUTS-2021 (230-region) grid.
+recombine_empl_nuts <- function(empl_data) {
+
+  hr04_empl <- empl_data |>
+    dplyr::filter(NUTS_ID %in% c("HR02", "HR05", "HR06")) |>
+    dplyr::group_by(Country_ID, Sector_ID) |>
+    dplyr::summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
+                     weight        = sum(weight, na.rm = TRUE),
+                     .groups = "drop") |>
+    dplyr::mutate(NUTS_ID = "HR04")
+
+  nl_remap <- empl_data |>
+    dplyr::filter(NUTS_ID %in% c("NL35", "NL36")) |>
+    dplyr::mutate(NUTS_ID = dplyr::case_when(
+      NUTS_ID == "NL35" ~ "NL31",
+      NUTS_ID == "NL36" ~ "NL33",
+      TRUE              ~ NUTS_ID
+    ))
+
+  pt_remap <- empl_data |>
+    dplyr::filter(NUTS_ID %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
+    dplyr::mutate(target = dplyr::case_when(
+      NUTS_ID %in% c("PT19", "PT1D") ~ "PT16",
+      NUTS_ID %in% c("PT1A", "PT1B") ~ "PT17",
+      NUTS_ID == "PT1C"              ~ "PT18",
+      TRUE                           ~ NUTS_ID
+    )) |>
+    dplyr::group_by(Country_ID, Sector_ID, target) |>
+    dplyr::summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
+                     weight        = sum(weight, na.rm = TRUE),
+                     .groups = "drop") |>
+    dplyr::rename(NUTS_ID = target)
+
+  obsolete_nuts <- c("HR02", "HR05", "HR06", "NL35", "NL36",
+                     "PT19", "PT1A", "PT1B", "PT1C", "PT1D")
+
+  empl_data |>
+    dplyr::filter(!NUTS_ID %in% obsolete_nuts) |>
+    dplyr::bind_rows(hr04_empl, nl_remap, pt_remap)
 }
 
 
