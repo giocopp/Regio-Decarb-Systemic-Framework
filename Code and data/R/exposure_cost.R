@@ -1,15 +1,6 @@
-# exposure_cost.R — carbon-cost-at-risk Exposure (Option A: pooled, multiplicative).
-# Functions only; NOT yet wired into _targets.R. Depends on range01() and
-# downscale_national_to_nuts2() from utils.R.
-#
-#   Exposure_raw = ETS_emis_t x P_ETS  +  CBAM_emb_t x P_CBAM      (sum of EUR costs)
-#   ETS_emis_t = EEA ETS-covered VERIFIED emissions (tonnes), NOT total Scope 1
-#   P_ETS  = EUA x (1 - free_alloc_share)        (ETS, direct emissions)
-#   P_CBAM = EUA x cbam_cov                       (CBAM, imported covered goods)
-#   Exposure = range01(log1p(Exposure_raw))  POOLED (Option A; log for variability).
-#   Carbon-cost ONLY (no emissions facet -> no double-count). cbam_cov = 1 for ALL
-#   importing sectors (CBAM falls on whoever imports covered goods), so every sector
-#   gets a non-zero cost via its covered-goods imports.
+# Carbon-cost-at-risk Exposure engine (pooled). Depends on range01() from utils.R.
+#   Exposure_raw = ets_emis_t * EUA*(1-free_alloc_share) + CBAM_emb_tCO2 * EUA*cbam_cov
+#   Exposure = range01(Exposure_raw), or range01(log1p(.)) when log_scale=TRUE.
 
 .eu27_codes <- function()
   c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
