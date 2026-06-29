@@ -1501,6 +1501,75 @@ create_berd <- function(base_data_path, empl_weights) {
 }
 
 
+#' Regional business R&D intensity = genuinely-regional R&D-capacity indicator
+#' from `rd_e_gerdreg` (sectperf = BES, R&D as % of regional GDP, NUTS-2),
+#' replicated across the manufacturing sectors. SUPERSEDES `create_berd()`.
+#'
+#' Why: the old `create_berd()` (national BERD-by-NACE downscaled by employment,
+#' then divided by employment in `04_normalize.R`) reduces algebraically to a
+#' country x sector constant — the downscale weight and the per-employee divisor
+#' cancel — so it carried NO within-country regional variation. The regional-
+#' resilience literature measures the innovation / adaptive-capacity channel with
+#' NUTS-2 R&D and patents (Bristow & Healy 2018; Filippetti et al. 2020; Toth et
+#' al. 2020; Rocchetta et al. 2021; Panori 2025); `rd_e_gerdreg` gives genuine
+#' regional business-R&D intensity. See LITERATURE_GATHERED.md section H.
+#'
+#' Kept under the Indicator name "BERD" so the Technology dimension, the reversed
+#' orientation (higher R&D -> lower vulnerability) and harmonisation are unchanged.
+#' Because it is now an INTENSITY (% of GDP), "BERD" is removed from the
+#' per-employee list in `R/04_normalize.R`.
+#'
+#' NB Eurostat codes (sectperf = "BES", unit = "PC_GDP") follow the standard R&D
+#' classification; confirm on the first networked run (the sandbox used for
+#' development had no Eurostat egress).
+#'
+#' @param empl_weights tibble (Country_ID, NUTS_ID, Sector_ID, weight) — supplies
+#'   the (region x sector) grid the region-level value is replicated across.
+#' @return tibble (Country_ID, NUTS_ID, Sector_ID, Indicator, Unit, Value)
+create_regional_berd <- function(empl_weights) {
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "rd_e_gerdreg",
+    filters     = list(sectperf = "BES", unit = "PC_GDP"),
+    date_filter = seq(this_yr - 6L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values))
+
+  # NUTS-2 geographies only (4-char codes within the EU-27).
+  reg <- raw |>
+    dplyr::filter(nchar(geo) == 4, substr(geo, 1, 2) %in% eu27)
+
+  pick <- pick_latest_complete_year(
+    reg, geo_dim = "geo", value_col = "values",
+    expected_geos = sort(unique(empl_weights$NUTS_ID)), max_years_back = 6L
+  )
+
+  rd_region <- reg |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year) |>
+    dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
+
+  # Replicate the region-level value across the (Country x NUTS x Sector) grid.
+  result <- empl_weights |>
+    dplyr::distinct(Country_ID, NUTS_ID, Sector_ID) |>
+    dplyr::left_join(rd_region, by = "NUTS_ID") |>
+    dplyr::transmute(
+      Country_ID, NUTS_ID, Sector_ID,
+      Indicator = "BERD",
+      Unit      = "R&D, % of regional GDP",
+      Value     = round(rd_pc_gdp, 4)
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected")  <- pick$year
+  attr(result, "source_dataset") <- "rd_e_gerdreg (sectperf=BES, PC_GDP)"
+  result
+}
+
+
 # Intensive sector indicators (national ratios/indices replicated to NUTS-2).
 
 

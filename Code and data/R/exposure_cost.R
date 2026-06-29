@@ -110,34 +110,107 @@ build_cbam_weights <- function(empl_weights, ets_geo,
   dplyr::bind_rows(geo_w, emp_w)
 }
 
-#' CBAM-leg quantity: embodied (direct) carbon in extra-EU imports of CBAM-
-#' covered goods, downscaled to NUTS-2 x sector. See prototypes/cbam_leg_prototype.R
-#' for caveats (FIGARO 2-digit > exact CBAM goods; direct intensity only).
+#' The 64 FIGARO producing industries (matches scripts/build_scope3_upstream.R).
+.figaro_real_industries <- function()
+  c("A01","A02","A03","B","C10-12","C13-15","C16","C17","C18",
+    "C19","C20","C21","C22","C23","C24","C25","C26","C27","C28",
+    "C29","C30","C31_32","C33","D35","E36","E37-39","F","G45",
+    "G46","G47","H49","H50","H51","H52","H53","I","J58","J59_60",
+    "J61","J62_63","K64","K65","K66","L","M69_70","M71","M72",
+    "M73","M74_75","N77","N78","N79","N80-82","O84","P85","Q86",
+    "Q87_88","R90-92","R93","S94","S95","S96","T","U")
+
+#' Total cradle-to-gate embodied emission intensity (tCO2 per MEUR of output),
+#' the full footprint f^T (I - A)^-1 for every (origin, FIGARO industry) — direct
+#' + ALL upstream tiers, incl. electricity. Same MRIO machinery as
+#' scripts/build_scope3_upstream.R; here the total footprint (not upstream-only).
+#' Used by compute_cbam_leg(intensity = "embodied"). See REVISION.md §23.
+.figaro_embodied_intensity <- function(io, ghg) {
+  real_ind <- .figaro_real_industries()
+  io  <- dplyr::mutate(io,  dplyr::across(c(c_orig, c_dest, ind_ava, ind_use),
+                                          as.character))
+  ghg <- dplyr::mutate(ghg, dplyr::across(c(c_orig, nace_r2), as.character))
+  regions <- sort(setdiff(unique(io$c_orig), "DOM"))
+  N   <- length(regions) * length(real_ind)
+  idx <- expand.grid(region = regions, ind = real_ind, stringsAsFactors = FALSE)
+  ky  <- function(r, i) paste(r, i, sep = "|")
+  k_of <- stats::setNames(seq_len(N), ky(idx$region, idx$ind))
+  fd_use <- c("P3_S13","P3_S14","P3_S15","P5M","P51G")
+
+  zr <- io |>
+    dplyr::filter(c_orig != "DOM", c_orig %in% regions, c_dest %in% regions,
+                  ind_ava %in% real_ind, ind_use %in% real_ind,
+                  !is.na(values), values > 0)
+  Z <- Matrix::sparseMatrix(i = k_of[ky(zr$c_orig, zr$ind_ava)],
+                            j = k_of[ky(zr$c_dest, zr$ind_use)],
+                            x = zr$values, dims = c(N, N))
+  fdr <- io |>
+    dplyr::filter(c_orig != "DOM", c_orig %in% regions, c_dest %in% regions,
+                  ind_ava %in% real_ind, ind_use %in% fd_use, !is.na(values)) |>
+    dplyr::group_by(c_orig, ind_ava) |>
+    dplyr::summarise(fd = sum(values, na.rm = TRUE), .groups = "drop")
+  x  <- as.numeric(Matrix::rowSums(Z))
+  fk <- k_of[ky(fdr$c_orig, fdr$ind_ava)]
+  x[fk] <- x[fk] + fdr$fd
+  x_inv <- ifelse(x > 0, 1 / x, 0)
+  A <- as.matrix(Z %*% Matrix::Diagonal(N, x_inv))
+  L <- solve(diag(N) - A)
+
+  e <- ghg |>
+    dplyr::group_by(c_orig, nace_r2) |>
+    dplyr::summarise(emis_kt = sum(values, na.rm = TRUE), .groups = "drop")
+  f  <- numeric(N)
+  ke <- k_of[ky(e$c_orig, e$nace_r2)]
+  ok <- !is.na(ke)
+  f[ke[ok]] <- e$emis_kt[ok] * 1000
+  f <- ifelse(x > 0, f / x, 0)                   # direct tCO2 / MEUR
+  e_total <- as.numeric(crossprod(f, L))          # f^T L : full footprint / MEUR
+
+  tibble::tibble(c_orig = idx$region, ind_ava = idx$ind, f = e_total)
+}
+
+#' CBAM-leg quantity: embodied carbon in extra-EU imports of CBAM-covered goods,
+#' downscaled to NUTS-2 x sector. `intensity = "direct"` (headline) uses the
+#' origin's Scope-1 intensity; `intensity = "embodied"` uses the full
+#' cradle-to-gate footprint (f^T (I-A)^-1) as the robustness variant motivated in
+#' EXPOSURE_CARBON_COST_REVISION.md §23 / LITERATURE §5b (Tanaka 2025; Su 2022).
+#' Caveats: FIGARO 2-digit industries are broader than the exact CBAM goods, and
+#' the full EUA price is applied (no netting of any carbon price paid abroad).
 #'
 #' @param io  FIGARO io tibble (ind_use, ind_ava, c_dest, c_orig, values), MEUR
 #' @param ghg FIGARO ghg tibble (c_orig, c_dest, nace_r2, values), kt CO2eq
 #' @param empl_weights tibble (Country_ID, NUTS_ID, Sector_ID, weight)
 #' @param covered_goods FIGARO origin industries treated as CBAM-covered
+#' @param intensity "direct" (Scope-1, headline) or "embodied" (full footprint)
 #' @return tibble NUTS_ID, Country_ID, Sector_ID, CBAM_emb_tCO2 (11 manufacturing
 #'   sub-sectors only; the "C" total is rolled up by the caller, not here)
 compute_cbam_leg <- function(io, ghg, empl_weights,
                              covered_goods = c("C20","C23","C24"),
-                             eu27 = .eu27_codes()) {
-  nonEU    <- setdiff(unique(as.character(io$c_orig)), c(eu27, "DOM"))
+                             eu27 = .eu27_codes(),
+                             intensity = c("direct", "embodied")) {
+  intensity <- match.arg(intensity)
+  io  <- dplyr::mutate(io,  dplyr::across(c(c_orig, c_dest, ind_ava, ind_use),
+                                          as.character))
+  ghg <- dplyr::mutate(ghg, dplyr::across(c(c_orig, nace_r2), as.character))
+  nonEU    <- setdiff(unique(io$c_orig), c(eu27, "DOM"))
   nace_map <- .figaro_nace_map()
 
-  output <- io |>
-    dplyr::group_by(c_orig, ind_ava) |>
-    dplyr::summarise(output = sum(values, na.rm = TRUE), .groups = "drop")
-  emis <- ghg |>
-    dplyr::group_by(c_orig, nace_r2) |>
-    dplyr::summarise(emis_kt = sum(values, na.rm = TRUE), .groups = "drop")
-
-  f_tab <- output |>
-    dplyr::filter(c_orig %in% nonEU, ind_ava %in% covered_goods) |>
-    dplyr::left_join(emis, by = c("c_orig", "ind_ava" = "nace_r2")) |>
-    dplyr::mutate(f = dplyr::if_else(output > 0, (emis_kt * 1000) / output, 0)) |>
-    dplyr::select(c_orig, ind_ava, f)
+  if (intensity == "embodied") {
+    f_tab <- .figaro_embodied_intensity(io, ghg) |>
+      dplyr::filter(c_orig %in% nonEU, ind_ava %in% covered_goods)
+  } else {
+    output <- io |>
+      dplyr::group_by(c_orig, ind_ava) |>
+      dplyr::summarise(output = sum(values, na.rm = TRUE), .groups = "drop")
+    emis <- ghg |>
+      dplyr::group_by(c_orig, nace_r2) |>
+      dplyr::summarise(emis_kt = sum(values, na.rm = TRUE), .groups = "drop")
+    f_tab <- output |>
+      dplyr::filter(c_orig %in% nonEU, ind_ava %in% covered_goods) |>
+      dplyr::left_join(emis, by = c("c_orig", "ind_ava" = "nace_r2")) |>
+      dplyr::mutate(f = dplyr::if_else(output > 0, (emis_kt * 1000) / output, 0)) |>
+      dplyr::select(c_orig, ind_ava, f)
+  }
 
   imp <- io |>
     dplyr::filter(c_orig %in% nonEU, ind_ava %in% covered_goods,
@@ -402,7 +475,8 @@ build_cost_trajectory <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
 #' 07_sensitivity.R (pooled + mean within-sector Spearman).
 run_sensitivity_cost <- function(risk_data_cost, vuln, ets_geo,
                                  ets_freealloc, cbam_leg, risk_data,
-                                 eua_price = 64.8, norm = "log") {
+                                 eua_price = 64.8, norm = "log",
+                                 cbam_leg_embodied = NULL) {
 
   sub <- risk_data_cost |> dplyr::filter(Sector_ID != "C")
 
@@ -445,5 +519,20 @@ run_sensitivity_cost <- function(risk_data_cost, vuln, ets_geo,
   row_2024 <- .sens_row("Cost TRI: 2034 headline vs 2024 policy state",
                         d24, "Risk_cost", "Risk_2024")
 
-  dplyr::bind_rows(row_base, norm_rows, row_2024)
+  # 4. CBAM intensity: headline direct vs full-embodied footprint (REVISION §23)
+  row_emb <- NULL
+  if (!is.null(cbam_leg_embodied)) {
+    tri_emb <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg_embodied,
+                              eua_price = eua_price, fa_mult = 0,
+                              cbam_factor = 1, norm = norm)
+    d_emb <- sub |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_cost = Risk_norm) |>
+      dplyr::inner_join(tri_emb |>
+                          dplyr::select(NUTS_ID, Sector_ID, Risk_emb = Risk_norm),
+                        by = c("NUTS_ID", "Sector_ID"))
+    row_emb <- .sens_row("Cost TRI CBAM intensity: direct vs embodied",
+                         d_emb, "Risk_cost", "Risk_emb")
+  }
+
+  dplyr::bind_rows(row_base, norm_rows, row_2024, row_emb)
 }

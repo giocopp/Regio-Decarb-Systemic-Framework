@@ -31,9 +31,11 @@ normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
   # reshape step in 03_reshape.R). Shared helper in utils.R.
   empl_data <- recombine_empl_nuts(empl_data)
 
-  # Per-employee normalisation for GFCF and BERD only — the other extensive
-  # indicators are already downscaled by employment shares upstream.
-  to_per_empl <- c("Gross_Fixed_Capital_Formation", "BERD")
+  # Per-employee normalisation for GFCF only. BERD is now a regional R&D
+  # INTENSITY (% of regional GDP, rd_e_gerdreg via create_regional_berd) — already
+  # intensive, so it is NOT divided by employment (the other extensive indicators
+  # are already downscaled by employment shares upstream).
+  to_per_empl <- c("Gross_Fixed_Capital_Formation")
 
   data_ready <- data_ready |>
     select(-any_of(c("n_enterprises", "pers_employed"))) |>

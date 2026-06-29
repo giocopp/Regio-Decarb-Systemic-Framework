@@ -239,7 +239,7 @@ list(
              format = "file"),
 
   tar_target(berd_data,
-             { force(empl_region_file); create_berd(path$base_data, empl_weights) }),
+             { force(empl_region_file); create_regional_berd(empl_weights) }),
   tar_target(berd_file,
              write_indicator_xlsx(berd_data,
                                   "Initial data/Sector data/TECH-BERD.xlsx"),
@@ -393,6 +393,18 @@ list(
     }
   ),
 
+  # CBAM leg under the full-embodied (cradle-to-gate) intensity — robustness
+  # input for the sensitivity battery (REVISION.md §23). Headline stays direct.
+  tar_target(
+    cbam_leg_embodied,
+    {
+      io  <- readRDS(figaro_cache[[1]])
+      ghg <- readRDS(figaro_cache[[2]])
+      compute_cbam_leg(io, ghg, build_cbam_weights(empl_weights, ets_geo),
+                       intensity = "embodied")
+    }
+  ),
+
   tar_target(
     vulnerability_pooled,
     build_vulnerability_pooled(data_reshaped, empl_weights,
@@ -482,7 +494,8 @@ list(
     sensitivity_cost,
     run_sensitivity_cost(risk_data_cost, vulnerability_pooled, ets_geo,
                          ets_freealloc, cbam_leg, risk_data,
-                         eua_price = eua_price_eur, norm = tri_norm_mode)
+                         eua_price = eua_price_eur, norm = tri_norm_mode,
+                         cbam_leg_embodied = cbam_leg_embodied)
   ),
 
   tar_target(

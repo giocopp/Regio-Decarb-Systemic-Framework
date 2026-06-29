@@ -1,0 +1,82 @@
+Country,good,O_EURbn,export_share,import_pen,major,type
+DE,C20,194.8,0.3,0.16,TRUE,"Home-market, import-protected (CBAM shields)"
+IT,C20,70,0.28,0.21,TRUE,"Home-market, import-protected (CBAM shields)"
+NL,C20,65.3,0.22,0.13,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+FR,C20,64.9,0.51,0.26,TRUE,Export-exposed (CBAM no help abroad)
+ES,C20,59,0.24,0.18,TRUE,"Home-market, import-protected (CBAM shields)"
+BE,C20,36.3,0.22,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+PL,C20,27,0.24,0.28,TRUE,"Home-market, import-protected (CBAM shields)"
+CZ,C20,16.8,0.1,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+AT,C20,16,0.23,0.18,TRUE,"Home-market, import-protected (CBAM shields)"
+FI,C20,14.1,0.41,0.21,TRUE,Export-exposed (CBAM no help abroad)
+SE,C20,13.5,0.4,0.23,TRUE,Export-exposed (CBAM no help abroad)
+IE,C20,12.9,0.7,0.75,TRUE,Export-exposed (CBAM no help abroad)
+DK,C20,8.4,0.37,0.17,TRUE,Export-exposed (CBAM no help abroad)
+PT,C20,8.4,0.23,0.2,TRUE,"Home-market, import-protected (CBAM shields)"
+HU,C20,7,0.23,0.42,TRUE,"Home-market, import-protected (CBAM shields)"
+LT,C20,4.3,0.36,0.2,TRUE,Export-exposed (CBAM no help abroad)
+RO,C20,4,0.28,0.44,TRUE,"Home-market, import-protected (CBAM shields)"
+EL,C20,3.2,0.32,0.39,TRUE,Export-exposed (CBAM no help abroad)
+BG,C20,2.3,0.32,0.4,FALSE,Export-exposed (CBAM no help abroad)
+SK,C20,2.1,0.17,0.34,FALSE,"Home-market, import-protected (CBAM shields)"
+SI,C20,1.7,0.46,0.76,FALSE,Net importer (CBAM = cost)
+LV,C20,0.7,0.29,0.4,FALSE,"Home-market, import-protected (CBAM shields)"
+HR,C20,0.7,0.09,0.36,FALSE,"Home-market, import-protected (CBAM shields)"
+LU,C20,0.6,0.11,0.23,FALSE,"Home-market, import-protected (CBAM shields)"
+EE,C20,0.5,0.43,0.58,FALSE,Export-exposed (CBAM no help abroad)
+CY,C20,0.1,0.24,0.77,FALSE,Net importer (CBAM = cost)
+MT,C20,0,0.1,0.82,FALSE,Net importer (CBAM = cost)
+DE,C23,62.1,0.1,0.09,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+IT,C23,43.1,0.16,0.08,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+FR,C23,30.2,0.09,0.12,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+ES,C23,27.1,0.17,0.09,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+PL,C23,21.2,0.12,0.12,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+BE,C23,9.9,0.08,0.07,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+CZ,C23,8.9,0.13,0.07,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+NL,C23,7.9,0.1,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+AT,C23,7.6,0.14,0.11,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+PT,C23,6.7,0.16,0.07,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+SE,C23,5.7,0.13,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+RO,C23,5.4,0.06,0.16,TRUE,"Home-market, import-protected (CBAM shields)"
+DK,C23,3.9,0.1,0.13,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+IE,C23,3.8,0.21,0.25,TRUE,"Home-market, import-protected (CBAM shields)"
+FI,C23,3.4,0.11,0.11,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+HU,C23,3.2,0.16,0.3,TRUE,"Home-market, import-protected (CBAM shields)"
+EL,C23,2.8,0.14,0.18,FALSE,"Home-market, import-protected (CBAM shields)"
+SK,C23,2.6,0.11,0.12,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+BG,C23,2.5,0.16,0.15,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+HR,C23,1.9,0.08,0.12,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+LU,C23,1.2,0.14,0.06,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+SI,C23,1.2,0.19,0.15,FALSE,"Home-market, import-protected (CBAM shields)"
+LT,C23,1,0.15,0.15,FALSE,"Home-market, import-protected (CBAM shields)"
+LV,C23,0.8,0.09,0.09,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+EE,C23,0.7,0.09,0.13,FALSE,"Home-market, low-trade (CBAM ~neutral)"
+CY,C23,0.6,0.06,0.17,FALSE,"Home-market, import-protected (CBAM shields)"
+MT,C23,0.3,0.04,0.19,FALSE,"Home-market, import-protected (CBAM shields)"
+DE,C24,151.9,0.15,0.07,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+IT,C24,99.8,0.15,0.17,TRUE,"Home-market, import-protected (CBAM shields)"
+ES,C24,42.8,0.12,0.15,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+FR,C24,35.7,0.24,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+BE,C24,27.9,0.19,0.08,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+AT,C24,23.5,0.21,0.1,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+PL,C24,20.9,0.16,0.21,TRUE,"Home-market, import-protected (CBAM shields)"
+SE,C24,19.9,0.3,0.13,TRUE,Export-exposed (CBAM no help abroad)
+FI,C24,13.6,0.29,0.16,TRUE,"Home-market, import-protected (CBAM shields)"
+CZ,C24,11.7,0.08,0.13,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+NL,C24,11,0.13,0.19,TRUE,"Home-market, import-protected (CBAM shields)"
+BG,C24,7.2,0.22,0.22,TRUE,"Home-market, import-protected (CBAM shields)"
+SK,C24,6.4,0.11,0.14,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+RO,C24,6.2,0.27,0.31,TRUE,"Home-market, import-protected (CBAM shields)"
+EL,C24,6,0.31,0.31,TRUE,Export-exposed (CBAM no help abroad)
+PT,C24,5.1,0.18,0.24,TRUE,"Home-market, import-protected (CBAM shields)"
+LU,C24,3.2,0.15,0.03,TRUE,"Home-market, low-trade (CBAM ~neutral)"
+SI,C24,3.1,0.17,0.21,TRUE,"Home-market, import-protected (CBAM shields)"
+HU,C24,2.9,0.19,0.24,FALSE,"Home-market, import-protected (CBAM shields)"
+DK,C24,2.1,0.18,0.37,FALSE,"Home-market, import-protected (CBAM shields)"
+IE,C24,1.5,0.25,0.51,FALSE,"Home-market, import-protected (CBAM shields)"
+HR,C24,0.5,0.08,0.41,FALSE,"Home-market, import-protected (CBAM shields)"
+LV,C24,0.2,0.23,0.58,FALSE,Net importer (CBAM = cost)
+EE,C24,0.1,0.2,0.64,FALSE,Net importer (CBAM = cost)
+CY,C24,0.1,0.32,0.67,FALSE,Net importer (CBAM = cost)
+LT,C24,0.1,0.56,0.9,FALSE,Net importer (CBAM = cost)
+MT,C24,0,0.32,0.67,FALSE,Net importer (CBAM = cost)
