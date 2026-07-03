@@ -1,11 +1,16 @@
-# exposure_cost.R — carbon-cost-at-risk Exposure and the headline TRI.
+# exposure.R — covered-carbon Exposure and the headline Risk index (TRI).
 #
-#   Exposure_raw = ets_emis_t * EUA * (1 - free_alloc_share)
-#                + CBAM_emb_tCO2 * EUA * cbam_cov
-#   Exposure     = norm(Exposure_raw), POOLED across cells (within-sector
-#                  min-max would cancel any sector-level price exactly)
+#   Exposure_raw = ets_emis_t + CBAM_emb_tCO2          # covered carbon, tCO2
+#   Exposure     = norm(Exposure_raw), POOLED across all cells.
 #
-# Specification and rationale: METHODOLOGY.md §9.1, §10.1.
+# Exposure is a per-cell covered-carbon volume (tonnes CO2): EUTL verified ETS
+# emissions + embodied carbon in extra-EU imports of CBAM-covered goods. No
+# carbon price is applied: a single EU-wide EUA price is a common scalar that
+# cancels under any monotone normalisation, so it never moved the ranking. The
+# earlier priced formulation (EUA x free-allocation/CBAM coverage) and its
+# 2024-2034 phase-in trajectory were removed (see git history). norm = "minmax"
+# (tri_norm_mode); true-zero cells keep Exposure = 0; pooled normalisation
+# throughout.
 
 .eu27_codes <- function()
   c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
@@ -24,9 +29,9 @@
   "C26","C26-C27","C27","C26-C27",
   "C31_32","C31-C33","C33","C31-C33")
 
-# Cost-TRI vulnerability dimensions. Supply_Chain (Import_ExtraEU) is
-# intentionally absent: imports are already priced in the CBAM leg.
-.cost_vuln_dims <- function() list(
+# Headline-TRI vulnerability dimensions (5). Supply_Chain (Import_ExtraEU) is
+# intentionally absent: imports already enter the CBAM leg of Exposure.
+.vuln_dims <- function() list(
   Energy          = c("Energy_Consumption", "Fossil_Share",
                       "Renewables_Share", "RE_Potential"),
   Labour          = c("Unemployment_Rate", "Labour_Market_Slack",
@@ -63,22 +68,19 @@ read_ets_nuts2 <- function(path) {
     tibble::as_tibble()
 }
 
-#' EUTL country x sector free-allocation share, capped at 1
-#' (over-allocation => zero effective ETS cost, not negative exposure).
-read_ets_freealloc <- function(path) {
-  utils::read.csv(path, stringsAsFactors = FALSE) |>
-    dplyr::transmute(Country_ID, Sector_ID,
-                     free_alloc_share = pmin(free_alloc_share, 1)) |>
-    tibble::as_tibble()
-}
-
-
 # ── CBAM leg ─────────────────────────────────────────────────────────────────
 
-#' Hybrid CBAM downscaling weights: geocoded plant emission shares for the
-#' four ETS sectors, employment shares otherwise. Heavy-sector weights span
-#' the full country grid with explicit 0 for plant-less regions — otherwise
-#' the downscaler's Sector-C fallback refills them and inflates the total.
+#' CBAM downscaling weights. The HEADLINE uses employment shares for every
+#' sector (`heavy_sectors = character(0)`): employment locates the importing
+#' users of the covered inputs, matches the pipeline's canonical downscaling
+#' rule (METHODOLOGY §5), and is the allocation that survives the external
+#' trade validation (ρ = 0.91 vs observed regional imports and no material
+#' physical-ceiling breach, vs ρ = 0.69 with breaches for the plant-emission
+#' hybrid — METHODOLOGY §14). The default `heavy_sectors` builds that hybrid
+#' (plant-emission shares for the four ETS sectors), retained ONLY as the
+#' `cbam_leg_hybrid` sensitivity variant. Heavy-sector weights span the full
+#' country grid with explicit 0 for plant-less regions — otherwise the
+#' downscaler's Sector-C fallback refills them and inflates the total.
 build_cbam_weights <- function(empl_weights, ets_geo,
                                heavy_sectors = c("C16-C18", "C19-C20",
                                                  "C23", "C24")) {
@@ -110,7 +112,8 @@ build_cbam_weights <- function(empl_weights, ets_geo,
   dplyr::bind_rows(geo_w, emp_w)
 }
 
-#' The 64 FIGARO producing industries (matches scripts/build_scope3_upstream.R).
+#' The 64 FIGARO producing industries (same universe as create_scope3(),
+#' R/01_create_data.R).
 .figaro_real_industries <- function()
   c("A01","A02","A03","B","C10-12","C13-15","C16","C17","C18",
     "C19","C20","C21","C22","C23","C24","C25","C26","C27","C28",
@@ -123,8 +126,9 @@ build_cbam_weights <- function(empl_weights, ets_geo,
 #' Total cradle-to-gate embodied emission intensity (tCO2 per MEUR of output),
 #' the full footprint f^T (I - A)^-1 for every (origin, FIGARO industry) — direct
 #' + ALL upstream tiers, incl. electricity. Same MRIO machinery as
-#' scripts/build_scope3_upstream.R; here the total footprint (not upstream-only).
-#' Used by compute_cbam_leg(intensity = "embodied"). See REVISION.md §23.
+#' create_scope3() (R/01_create_data.R); here the total footprint (not
+#' upstream-only). Used by compute_cbam_leg(intensity = "embodied"). See
+#' Review/EXPOSURE_CARBON_COST_REVISION.md §23.
 .figaro_embodied_intensity <- function(io, ghg) {
   real_ind <- .figaro_real_industries()
   io  <- dplyr::mutate(io,  dplyr::across(c(c_orig, c_dest, ind_ava, ind_use),
@@ -173,9 +177,11 @@ build_cbam_weights <- function(empl_weights, ets_geo,
 #' downscaled to NUTS-2 x sector. `intensity = "direct"` (headline) uses the
 #' origin's Scope-1 intensity; `intensity = "embodied"` uses the full
 #' cradle-to-gate footprint (f^T (I-A)^-1) as the robustness variant motivated in
-#' EXPOSURE_CARBON_COST_REVISION.md §23 / LITERATURE §5b (Tanaka 2025; Su 2022).
+#' Review/EXPOSURE_CARBON_COST_REVISION.md §23 and
+#' Review/EXPOSURE_CARBON_COST_LITERATURE.md §5b (Tanaka 2025; Su 2022).
 #' Caveats: FIGARO 2-digit industries are broader than the exact CBAM goods, and
-#' the full EUA price is applied (no netting of any carbon price paid abroad).
+#' all embodied import carbon is counted in full (no deduction for carbon
+#' already priced in the origin country).
 #'
 #' @param io  FIGARO io tibble (ind_use, ind_ava, c_dest, c_orig, values), MEUR
 #' @param ghg FIGARO ghg tibble (c_orig, c_dest, nace_r2, values), kt CO2eq
@@ -230,7 +236,7 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
 
 # ── Exposure engine ──────────────────────────────────────────────────────────
 
-#' Normalise a raw carbon cost to [0, 1] under the chosen scheme.
+#' Normalise the raw covered-carbon volume to [0, 1] under the chosen scheme.
 #' "log" = range01(log1p(.)), "minmax" = range01(.), "rank" = percentile rank.
 .norm_exposure <- function(raw, norm) {
   switch(norm,
@@ -240,29 +246,22 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
          stop("unknown norm: ", norm))
 }
 
-#' Assemble pooled, multiplicative carbon-cost-at-risk Exposure.
+#' Assemble pooled Exposure = normalised covered carbon volume.
+#'
+#' Exposure_raw is the cell's covered carbon volume in tonnes CO2: EUTL verified
+#' ETS emissions + embodied carbon in extra-EU imports of CBAM-covered goods. No
+#' carbon price is applied (a single EU-wide EUA price is a common scalar that
+#' cancels under normalisation — see file header).
 #'
 #' @param df tibble with NUTS_ID, Country_ID, Sector_ID, ets_emis_t
-#'   (EUTL verified emissions, tonnes), free_alloc_share, CBAM_emb_tCO2, cbam_cov
-#' @param eua_price scalar EUA EUR/tCO2 (a common scalar -> does not affect
-#'   the ranking, only the EUR interpretation of the cost columns)
-#' @param norm "log" (headline), "minmax", or "rank"; `log_scale` is the
-#'   legacy switch kept for the prototype scripts (TRUE -> "log").
+#'   (EUTL verified emissions, tonnes) and CBAM_emb_tCO2 (tonnes)
+#' @param norm "minmax" (the wired headline, tri_norm_mode), "log", or "rank"
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
-#'   (which makes any sector-level price wash out — for comparison)
-#' @return df plus P_ETS, P_CBAM, ETS_cost, CBAM_cost, Exposure_raw, Exposure
-assemble_exposure_cost <- function(df, eua_price = 1, log_scale = TRUE,
-                                   within_sector = FALSE,
-                                   norm = if (log_scale) "log" else "minmax") {
+#' @return df plus Exposure_raw (covered tCO2) and Exposure
+assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax") {
   norm <- match.arg(norm, c("log", "minmax", "rank"))
   d <- df |>
-    dplyr::mutate(
-      P_ETS        = eua_price * (1 - free_alloc_share),
-      P_CBAM       = eua_price * cbam_cov,
-      ETS_cost     = ets_emis_t * P_ETS,
-      CBAM_cost    = CBAM_emb_tCO2 * P_CBAM,
-      Exposure_raw = ETS_cost + CBAM_cost
-    )
+    dplyr::mutate(Exposure_raw = ets_emis_t + CBAM_emb_tCO2)
   if (within_sector) {
     d <- d |>
       dplyr::group_by(Sector_ID) |>
@@ -280,11 +279,11 @@ assemble_exposure_cost <- function(df, eua_price = 1, log_scale = TRUE,
 
 # ── Pooled Vulnerability (5 dimensions) ──────────────────────────────────────
 
-#' Pooled 5-dimension Vulnerability for the carbon-cost TRI ("rank" ranks
-#' the top level; otherwise min-max — log applies to the raw cost only).
+#' Pooled 5-dimension Vulnerability for the headline TRI ("rank" ranks
+#' the top level; otherwise min-max — log applies to the raw exposure only).
 build_vulnerability_pooled <- function(data_reshaped, empl_weights,
                                        norm = "log") {
-  dims <- .cost_vuln_dims()
+  dims <- .vuln_dims()
   vw <- normalize_indicators(dplyr::filter(data_reshaped, Sector_ID != "C"),
                              empl_weights, pool = TRUE)$wide
   for (nm in names(dims)) {
@@ -305,42 +304,33 @@ build_vulnerability_pooled <- function(data_reshaped, empl_weights,
 }
 
 
-# ── TRI builder ──────────────────────────────────────────────────────────────
+# ── Risk-index builder ───────────────────────────────────────────────────────
 
-#' Join the cost inputs onto the vulnerability grid for one policy state.
-#' @param fa_mult multiplier on the observed free-allocation share
-#'   (1 = today's allocation, 0 = full phase-in)
-#' @param cbam_factor CBAM coverage factor in [0, 1] (Reg. 2023/956 ramp)
-assemble_cost_panel <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
-                                fa_mult = 0, cbam_factor = 1) {
-  fa <- ets_freealloc |>
-    dplyr::transmute(Country_ID, Sector_ID,
-                     free_alloc_share = free_alloc_share * fa_mult)
+#' Join the carbon-volume inputs (geocoded ETS + CBAM-embodied) onto the
+#' vulnerability grid. Missing legs are true zeros. Carries the 5 Vuln_*
+#' dimension scores and pers_employed through for the decomposition figures.
+assemble_risk_panel <- function(vuln, ets_geo, cbam_leg) {
   vuln |>
     dplyr::select(dplyr::any_of(c("NUTS_ID", "NUTS_Name", "Country_ID",
-                                  "Sector_ID", "Sector_Name", "Vulnerability"))) |>
+                                  "Sector_ID", "Sector_Name",
+                                  "pers_employed", "Vulnerability")),
+                  dplyr::starts_with("Vuln_")) |>
     dplyr::left_join(ets_geo, by = c("NUTS_ID", "Country_ID", "Sector_ID")) |>
     dplyr::left_join(cbam_leg |>
                        dplyr::select(NUTS_ID, Sector_ID, CBAM_emb_tCO2),
                      by = c("NUTS_ID", "Sector_ID")) |>
-    dplyr::left_join(fa, by = c("Country_ID", "Sector_ID")) |>
     dplyr::mutate(
-      ets_emis_t       = dplyr::coalesce(ets_emis_t, 0),
-      CBAM_emb_tCO2    = dplyr::coalesce(CBAM_emb_tCO2, 0),
-      free_alloc_share = dplyr::coalesce(free_alloc_share, 1),
-      cbam_cov         = cbam_factor
+      ets_emis_t    = dplyr::coalesce(ets_emis_t, 0),
+      CBAM_emb_tCO2 = dplyr::coalesce(CBAM_emb_tCO2, 0)
     )
 }
 
-#' Carbon-cost TRI for the 11 sub-sectors at one policy state.
-#' Risk_norm = range01(sqrt(E) * sqrt(V)), pooled; zero-cost cells get
+#' Covered-carbon Risk index for the 11 sub-sectors.
+#' Risk_norm = range01(sqrt(E) * sqrt(V)), pooled; zero-volume cells get
 #' Exposure 0 -> Risk NA -> "Zero Risk" band downstream.
-build_cost_tri <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
-                           eua_price = 1, fa_mult = 0, cbam_factor = 1,
-                           norm = "log") {
-  assemble_cost_panel(vuln, ets_geo, ets_freealloc, cbam_leg,
-                      fa_mult = fa_mult, cbam_factor = cbam_factor) |>
-    assemble_exposure_cost(eua_price = eua_price, norm = norm) |>
+build_risk_tri <- function(vuln, ets_geo, cbam_leg, norm = "minmax") {
+  assemble_risk_panel(vuln, ets_geo, cbam_leg) |>
+    assemble_exposure(norm = norm) |>
     dplyr::mutate(
       E         = dplyr::if_else(Exposure == 0, NA_real_, Exposure),
       Risk_norm = range01(sqrt(E) * sqrt(Vulnerability))
@@ -348,18 +338,21 @@ build_cost_tri <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
     dplyr::select(-E)
 }
 
-#' "C" roll-up: per-region sums of the raw cost legs, normalised across
-#' regions; Vulnerability = regional mean of sub-sector scores.
-rollup_cost_C <- function(tri_subsector, vuln, norm = "log") {
+#' "C" roll-up: per-region sums of the carbon-volume legs (and pers_employed),
+#' normalised across regions; Vulnerability = regional mean of sub-sector
+#' scores, re-normalised; Vuln_* dimensions = regional means (kept on the
+#' bounded [0.01, 0.99] indicator scale).
+rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax") {
   vtop <- if (identical(norm, "rank")) prank
           else function(x) range01(x, preserve_zeros = FALSE)
 
   Craw <- tri_subsector |>
     dplyr::group_by(NUTS_ID, NUTS_Name, Country_ID) |>
-    dplyr::summarise(dplyr::across(c(ets_emis_t, CBAM_emb_tCO2,
-                                     ETS_cost, CBAM_cost, Exposure_raw),
-                                   \(x) sum(x, na.rm = TRUE)),
-                     .groups = "drop")
+    dplyr::summarise(
+      dplyr::across(c(ets_emis_t, CBAM_emb_tCO2, Exposure_raw, pers_employed),
+                    \(x) sum(x, na.rm = TRUE)),
+      dplyr::across(dplyr::starts_with("Vuln_"), \(x) mean(x, na.rm = TRUE)),
+      .groups = "drop")
 
   Cv <- vuln |>
     dplyr::group_by(NUTS_ID, Country_ID) |>
@@ -379,17 +372,17 @@ rollup_cost_C <- function(tri_subsector, vuln, norm = "log") {
     dplyr::select(-E)
 }
 
-#' Full headline panel (-> Final data/Risk_data_carbon_cost.{xlsx,csv}):
-#' 11 sub-sectors + C roll-up, reference scope columns, quintile bands.
-build_risk_data_cost <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
-                                 data_reshaped, eua_price = 64.8,
-                                 norm = "log") {
-  tri <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg,
-                        eua_price = eua_price, fa_mult = 0, cbam_factor = 1,
-                        norm = norm)
-  C_tri <- rollup_cost_C(tri, vuln, norm = norm)
+#' Full headline panel (-> Final data/Risk_data.{xlsx,csv}):
+#' 11 sub-sectors + C roll-up, Scope 1/2/3 reference columns, the 5 Vuln_*
+#' dimension scores and pers_employed (for the decomposition figures),
+#' quintile bands. Exposure legs are published as exposure_ETS /
+#' exposure_CBAM / exposure_total (tonnes CO2).
+build_risk_data <- function(vuln, ets_geo, cbam_leg,
+                            data_reshaped, norm = "minmax") {
+  tri <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = norm)
+  C_tri <- rollup_risk_C(tri, vuln, norm = norm)
 
-  # Scope 1/2/3 carried for analysis only — not priced in the index
+  # Scope 1/2/3 carried for analysis only — not part of the index
   scopes_raw <- data_reshaped |>
     dplyr::filter(Indicator %in% c("Scope1_Emissions", "Scope2_Emissions",
                                    "Scope3_Emissions")) |>
@@ -411,128 +404,79 @@ build_risk_data_cost <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
     ) |>
     dplyr::select(NUTS_ID, NUTS_Name, Country_ID, Sector_ID, Sector_Name,
                   Scope1_Emissions, Scope2_Emissions, Scope3_Emissions,
-                  ets_emis_t, CBAM_emb_tCO2, free_alloc_share,
-                  ETS_cost_EUR = ETS_cost, CBAM_cost_EUR = CBAM_cost,
-                  Carbon_cost_EUR = Exposure_raw,
-                  Exposure, Vulnerability, Risk_norm, Risk_Band) |>
+                  exposure_ETS = ets_emis_t, exposure_CBAM = CBAM_emb_tCO2,
+                  exposure_total = Exposure_raw,
+                  Exposure, Vulnerability, dplyr::starts_with("Vuln_"),
+                  Risk_norm, Risk_Band, pers_employed) |>
     tibble::as_tibble()
 }
 
 
-# ── Hazard trajectory (2024-2034 phase-in) ───────────────────────────────────
+# ── Sensitivity rows for the headline Risk index ─────────────────────────────
 
-#' CBAM phase-in factor F(t) per Reg. (EU) 2023/956 Art. 31 + revised ETS
-#' Directive Art. 10a: free allocation = base*(1-F), CBAM coverage = F.
-#' 2023-2025 transitional (F = 0, reporting only).
-cbam_phase_factor <- function(year) {
-  f <- c(`2026` = 0.025, `2027` = 0.05, `2028` = 0.10, `2029` = 0.225,
-         `2030` = 0.485, `2031` = 0.61, `2032` = 0.735, `2033` = 0.86,
-         `2034` = 1.0)
-  if (year <= 2025) return(0)
-  if (year >= 2034) return(1)
-  as.numeric(f[as.character(year)])
-}
+#' Headline-TRI sensitivity: headline vs raw-emissions baseline, normalisation
+#' variants, and CBAM intensity. Uses .sens_row() from 07_sensitivity.R
+#' (pooled + mean within-sector Spearman).
+run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
+                                 cbam_leg, risk_data_raw_emissions,
+                                 norm = "minmax", cbam_leg_embodied = NULL,
+                                 cbam_leg_hybrid = NULL) {
 
-#' Cost trajectory along the legislated phase-in path: total cost (EUR bn at
-#' the given EUA price), ETS share, number of priced cells, and Spearman of
-#' each year's ranking vs the 2034 headline.
-build_cost_trajectory <- function(vuln, ets_geo, ets_freealloc, cbam_leg,
-                                  eua_price = 64.8,
-                                  years = c(2024, 2026, 2028, 2030, 2032, 2034),
-                                  norm = "log") {
-  headline <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg,
-                             eua_price = eua_price, fa_mult = 0,
-                             cbam_factor = 1, norm = norm)
+  sub <- risk_data |> dplyr::filter(Sector_ID != "C")
 
-  purrr::map_dfr(years, function(y) {
-    Fy <- cbam_phase_factor(y)
-    rk <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg,
-                         eua_price = eua_price, fa_mult = 1 - Fy,
-                         cbam_factor = Fy, norm = norm)
-    jj <- headline |>
-      dplyr::select(NUTS_ID, Sector_ID, rH = Risk_norm) |>
-      dplyr::inner_join(rk |> dplyr::select(NUTS_ID, Sector_ID, r = Risk_norm),
-                        by = c("NUTS_ID", "Sector_ID")) |>
-      dplyr::filter(!is.na(rH) & !is.na(r))
-    tibble::tibble(
-      year        = y,
-      free_alloc  = round(1 - Fy, 3),
-      CBAM_factor = Fy,
-      cost_EURbn  = round(sum(rk$Exposure_raw, na.rm = TRUE) / 1e9, 1),
-      ETS_share   = round(sum(rk$ETS_cost, na.rm = TRUE) /
-                          sum(rk$ETS_cost + rk$CBAM_cost, na.rm = TRUE), 2),
-      n_priced    = sum(rk$Exposure > 0, na.rm = TRUE),
-      rho_vs_2034 = round(cor(jj$r, jj$rH, method = "spearman"), 3)
-    )
-  })
-}
-
-
-# ── Sensitivity rows for the carbon-cost TRI ─────────────────────────────────
-
-#' Cost-TRI sensitivity: headline vs emissions baseline, normalisation
-#' variants, and the 2024 policy state. Uses .sens_row() from
-#' 07_sensitivity.R (pooled + mean within-sector Spearman).
-run_sensitivity_cost <- function(risk_data_cost, vuln, ets_geo,
-                                 ets_freealloc, cbam_leg, risk_data,
-                                 eua_price = 64.8, norm = "log",
-                                 cbam_leg_embodied = NULL) {
-
-  sub <- risk_data_cost |> dplyr::filter(Sector_ID != "C")
-
-  # 1. vs the emissions-based baseline TRI (legacy index)
+  # 1. vs the raw-emissions baseline TRI (legacy index)
   cmp_base <- sub |>
-    dplyr::select(NUTS_ID, Sector_ID, Risk_cost = Risk_norm) |>
-    dplyr::inner_join(risk_data |>
+    dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
+    dplyr::inner_join(risk_data_raw_emissions |>
                         dplyr::select(NUTS_ID, Sector_ID,
                                       Risk_base = Risk_norm),
                       by = c("NUTS_ID", "Sector_ID"))
-  row_base <- .sens_row("Cost TRI vs emissions-baseline TRI",
-                        cmp_base, "Risk_cost", "Risk_base")
+  row_base <- .sens_row("Headline TRI vs raw-emissions TRI",
+                        cmp_base, "Risk_headline", "Risk_base")
 
   # 2. normalisation variants of the headline
   norm_rows <- purrr::map_dfr(setdiff(c("log", "minmax", "rank"), norm),
                               function(alt) {
-    tri_alt <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg,
-                              eua_price = eua_price, fa_mult = 0,
-                              cbam_factor = 1, norm = alt)
+    tri_alt <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = alt)
     d <- sub |>
-      dplyr::select(NUTS_ID, Sector_ID, Risk_cost = Risk_norm) |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
       dplyr::inner_join(tri_alt |>
                           dplyr::select(NUTS_ID, Sector_ID,
                                         Risk_alt = Risk_norm),
                         by = c("NUTS_ID", "Sector_ID"))
-    .sens_row(paste0("Cost TRI norm: ", norm, " vs ", alt),
-              d, "Risk_cost", "Risk_alt")
+    .sens_row(paste0("Headline TRI norm: ", norm, " vs ", alt),
+              d, "Risk_headline", "Risk_alt")
   })
 
-  # 3. headline (2034 full phase-in) vs today's policy state (2024)
-  tri_2024 <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg,
-                             eua_price = eua_price, fa_mult = 1,
-                             cbam_factor = 0, norm = norm)
-  d24 <- sub |>
-    dplyr::select(NUTS_ID, Sector_ID, Risk_cost = Risk_norm) |>
-    dplyr::inner_join(tri_2024 |>
-                        dplyr::select(NUTS_ID, Sector_ID,
-                                      Risk_2024 = Risk_norm),
-                      by = c("NUTS_ID", "Sector_ID"))
-  row_2024 <- .sens_row("Cost TRI: 2034 headline vs 2024 policy state",
-                        d24, "Risk_cost", "Risk_2024")
-
-  # 4. CBAM intensity: headline direct vs full-embodied footprint (REVISION §23)
+  # 3. CBAM intensity: headline direct vs full-embodied footprint
+  #    (Review/EXPOSURE_CARBON_COST_REVISION.md §23)
   row_emb <- NULL
   if (!is.null(cbam_leg_embodied)) {
-    tri_emb <- build_cost_tri(vuln, ets_geo, ets_freealloc, cbam_leg_embodied,
-                              eua_price = eua_price, fa_mult = 0,
-                              cbam_factor = 1, norm = norm)
+    tri_emb <- build_risk_tri(vuln, ets_geo, cbam_leg_embodied, norm = norm)
     d_emb <- sub |>
-      dplyr::select(NUTS_ID, Sector_ID, Risk_cost = Risk_norm) |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
       dplyr::inner_join(tri_emb |>
                           dplyr::select(NUTS_ID, Sector_ID, Risk_emb = Risk_norm),
                         by = c("NUTS_ID", "Sector_ID"))
-    row_emb <- .sens_row("Cost TRI CBAM intensity: direct vs embodied",
-                         d_emb, "Risk_cost", "Risk_emb")
+    row_emb <- .sens_row("Headline TRI CBAM intensity: direct vs embodied",
+                         d_emb, "Risk_headline", "Risk_emb")
   }
 
-  dplyr::bind_rows(row_base, norm_rows, row_2024, row_emb)
+  # 4. CBAM allocation: employment-only weights (headline, adopted after the
+  #    external trade validation — METHODOLOGY §14) vs the plant-emission
+  #    hybrid retained as the sensitivity variant
+  row_alloc <- NULL
+  if (!is.null(cbam_leg_hybrid)) {
+    tri_alloc <- build_risk_tri(vuln, ets_geo, cbam_leg_hybrid, norm = norm)
+    d_alloc <- sub |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
+      dplyr::inner_join(tri_alloc |>
+                          dplyr::select(NUTS_ID, Sector_ID,
+                                        Risk_alloc = Risk_norm),
+                        by = c("NUTS_ID", "Sector_ID"))
+    row_alloc <- .sens_row("Headline TRI CBAM allocation: employment-only vs plant-emission hybrid",
+                           d_alloc, "Risk_headline", "Risk_alloc")
+  }
+
+  dplyr::bind_rows(row_base, norm_rows, row_emb, row_alloc)
 }

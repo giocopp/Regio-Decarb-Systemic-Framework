@@ -135,9 +135,13 @@ list(
     format = "file"
   ),
 
+  # EQI 2024 standalone release (path inlined, not in `path`, so that editing
+  # it does not invalidate every path-dependent creator target; the legacy
+  # path$qog entry [qog_eureg.csv] is unused and kept only for hash stability)
   tar_target(
     qog_data,
-    create_qog(path$qog, path$base_data)
+    create_qog("Initial data/Non sector data/qog_eqi_long_24.csv",
+               path$base_data)
   ),
   tar_target(
     qog_file,
@@ -351,32 +355,19 @@ list(
     normalize_indicators(data_reshaped, empl_weights)
   ),
 
-  # ── Phase 5: Aggregate risk (legacy emissions-based baseline) ──
-  tar_target(
-    risk_data,
-    aggregate_risk(data_normalized$wide)
-  ),
+  # ── Phase 5: Risk index (headline) ───────────────────────────
+  # Exposure = covered carbon volume (geocoded ETS + CBAM legs).
+  # See METHODOLOGY.md §10.1 and R/exposure.R.
 
-  # ── Phase 5b: carbon-cost-at-risk Exposure -> headline TRI ──────
-  # See METHODOLOGY.md §10.1 and R/exposure_cost.R.
-
-  # "minmax" | "log" | "rank" (sensitivity_cost compares all three)
+  # "minmax" | "log" | "rank" (sensitivity_risk compares all three)
   tar_target(tri_norm_mode, "minmax"),
-
-  # EUA 2024 annual average, EUR/tCO2; a common scalar (EUR interpretation
-  # only, ranking-neutral)
-  tar_target(eua_price_eur, 64.8),
 
   # EUTL inputs built once by prototypes/ets_geocode.R; provenance in
   # Initial data/EUTL_euets_info/README.md
   tar_target(ets_nuts2_file,
              "Initial data/EUTL_euets_info/ets_nuts2_sector.csv",
              format = "file"),
-  tar_target(ets_freealloc_file,
-             "Initial data/EUTL_euets_info/ets_country_sector_freealloc.csv",
-             format = "file"),
   tar_target(ets_geo, read_ets_nuts2(ets_nuts2_file)),
-  tar_target(ets_freealloc, read_ets_freealloc(ets_freealloc_file)),
 
   tar_target(
     figaro_cache,
@@ -384,24 +375,49 @@ list(
     format = "file"
   ),
 
+  # HEADLINE CBAM component: employment-share downscaling weights for ALL
+  # sectors (heavy_sectors = character(0)) — adopted 2026-07-03 after the
+  # external trade validation (METHODOLOGY §14): employment locates the
+  # importing users of covered inputs, matches the pipeline's canonical
+  # downscaling rule (§5), fits observed regional imports at ρ = 0.91 and
+  # respects the physical import ceilings the plant-emission hybrid breaches.
   tar_target(
     cbam_leg,
     {
       io  <- readRDS(figaro_cache[[1]])
       ghg <- readRDS(figaro_cache[[2]])
-      compute_cbam_leg(io, ghg, build_cbam_weights(empl_weights, ets_geo))
+      compute_cbam_leg(io, ghg,
+                       build_cbam_weights(empl_weights, ets_geo,
+                                          heavy_sectors = character(0)))
     }
   ),
 
-  # CBAM leg under the full-embodied (cradle-to-gate) intensity — robustness
-  # input for the sensitivity battery (REVISION.md §23). Headline stays direct.
+  # CBAM component under the full-embodied (cradle-to-gate) intensity —
+  # robustness input for the sensitivity battery (REVISION.md §23). Same
+  # employment-only weights as the headline so the comparison isolates the
+  # intensity basis. Headline stays direct.
   tar_target(
     cbam_leg_embodied,
     {
       io  <- readRDS(figaro_cache[[1]])
       ghg <- readRDS(figaro_cache[[2]])
-      compute_cbam_leg(io, ghg, build_cbam_weights(empl_weights, ets_geo),
+      compute_cbam_leg(io, ghg,
+                       build_cbam_weights(empl_weights, ets_geo,
+                                          heavy_sectors = character(0)),
                        intensity = "embodied")
+    }
+  ),
+
+  # CBAM component under the former hybrid weights (plant-emission shares in
+  # the four heavy sectors) — retained ONLY as the allocation-sensitivity
+  # variant; rejected as headline by the external validation (ρ = 0.69,
+  # ceiling breaches in Sardegna 3.4× / Puglia 1.4× — METHODOLOGY §14).
+  tar_target(
+    cbam_leg_hybrid,
+    {
+      io  <- readRDS(figaro_cache[[1]])
+      ghg <- readRDS(figaro_cache[[2]])
+      compute_cbam_leg(io, ghg, build_cbam_weights(empl_weights, ets_geo))
     }
   ),
 
@@ -412,33 +428,41 @@ list(
   ),
 
   tar_target(
-    risk_data_cost,
-    build_risk_data_cost(vulnerability_pooled, ets_geo, ets_freealloc,
-                         cbam_leg, data_reshaped,
-                         eua_price = eua_price_eur, norm = tri_norm_mode)
-  ),
-
-  # hazard layer: cost trajectory along the legislated 2024-2034 phase-in
-  tar_target(
-    cost_trajectory,
-    build_cost_trajectory(vulnerability_pooled, ets_geo, ets_freealloc,
-                          cbam_leg, eua_price = eua_price_eur,
-                          norm = tri_norm_mode)
+    risk_data,
+    build_risk_data(vulnerability_pooled, ets_geo, cbam_leg,
+                    data_reshaped, norm = tri_norm_mode)
   ),
 
   tar_target(
-    save_risk_cost_xlsx,
+    save_risk_xlsx,
     {
-      writexl::write_xlsx(risk_data_cost,
-                          "Final data/Risk_data_carbon_cost.xlsx")
-      write.csv(risk_data_cost, "Final data/Risk_data_carbon_cost.csv",
+      writexl::write_xlsx(risk_data, "Final data/Risk_data.xlsx")
+      write.csv(risk_data, "Final data/Risk_data.csv",
                 row.names = FALSE)
-      "Final data/Risk_data_carbon_cost.xlsx"
+      "Final data/Risk_data.xlsx"
     },
     format = "file"
   ),
 
-  # ── Phase 6: Save final data ─────────────────────────────────
+  # ── Phase 6: Raw-emissions index (comparison only) ───────────
+  tar_target(
+    risk_data_raw_emissions,
+    aggregate_risk(data_normalized$wide)
+  ),
+
+  tar_target(
+    save_risk_raw_emissions_xlsx,
+    {
+      writexl::write_xlsx(risk_data_raw_emissions,
+                          "Final data/Risk_data_raw_emissions.xlsx")
+      write.csv(risk_data_raw_emissions,
+                "Final data/Risk_data_raw_emissions.csv", row.names = FALSE)
+      "Final data/Risk_data_raw_emissions.xlsx"
+    },
+    format = "file"
+  ),
+
+  # ── Phase 7: Save raw data ───────────────────────────────────
   tar_target(
     save_raw_xlsx,
     {
@@ -449,17 +473,7 @@ list(
     format = "file"
   ),
 
-  tar_target(
-    save_risk_xlsx,
-    {
-      writexl::write_xlsx(risk_data, "Final data/Risk_data.xlsx")
-      write.csv(risk_data, "Final data/Risk_data.csv", row.names = FALSE)
-      "Final data/Risk_data.xlsx"
-    },
-    format = "file"
-  ),
-
-  # ── Phase 7: Figures ─────────────────────────────────────────
+  # ── Phase 8: Figures ─────────────────────────────────────────
   tar_target(
     figure_maps,
     plot_tri_maps(risk_data, output_dir = "Figures"),
@@ -473,12 +487,12 @@ list(
   ),
 
   tar_target(
-    figure_cost_maps,
-    plot_cost_tri_maps(risk_data_cost, output_dir = "Figures"),
+    figure_risk_maps,
+    plot_risk_maps(risk_data, output_dir = "Figures"),
     format = "file"
   ),
 
-  # ── Phase 8: Sensitivity analysis ────────────────────────────
+  # ── Phase 9: Sensitivity analysis ────────────────────────────
   # EDGAR-based Scope 1 for C19-C20, C23, C24 — sensitivity input only.
   tar_target(
     edgar_scope1,
@@ -487,24 +501,24 @@ list(
 
   tar_target(
     sensitivity_results,
-    run_sensitivity(risk_data, edgar_scope1 = edgar_scope1)
+    run_sensitivity(risk_data_raw_emissions, edgar_scope1 = edgar_scope1)
   ),
 
   tar_target(
-    sensitivity_cost,
-    run_sensitivity_cost(risk_data_cost, vulnerability_pooled, ets_geo,
-                         ets_freealloc, cbam_leg, risk_data,
-                         eua_price = eua_price_eur, norm = tri_norm_mode,
-                         cbam_leg_embodied = cbam_leg_embodied)
+    sensitivity_risk,
+    run_risk_sensitivity(risk_data, vulnerability_pooled, ets_geo,
+                         cbam_leg, risk_data_raw_emissions,
+                         norm = tri_norm_mode,
+                         cbam_leg_embodied = cbam_leg_embodied,
+                         cbam_leg_hybrid = cbam_leg_hybrid)
   ),
 
   tar_target(
     save_sensitivity,
     {
       writexl::write_xlsx(
-        list(baseline_battery    = sensitivity_results,
-             carbon_cost_tri     = sensitivity_cost,
-             phase_in_trajectory = cost_trajectory),
+        list(baseline_battery = sensitivity_results,
+             risk_tri         = sensitivity_risk),
         "Final data/Sensitivity_Analysis.xlsx"
       )
       "Final data/Sensitivity_Analysis.xlsx"
@@ -512,7 +526,7 @@ list(
     format = "file"
   ),
 
-  # ── Phase 9: Insights (tables + extra figures) ────────────────
+  # ── Phase 10: Insights (tables + extra figures) ───────────────
   tar_target(
     top_bottom_table,
     build_top_bottom_table(risk_data, k = 5)

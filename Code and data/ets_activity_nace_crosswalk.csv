@@ -1,5 +1,5 @@
 code,label_standard_annexI_TO_VALIDATE,Sector_ID,verified_2024_Mt,free_alloc_share_EU,included
-20,Combustion of fuels,EXCLUDED_power_crosscutting,561.0,0.114,no
+20,Combustion of fuels,via_installation_NACE_divisions_10-33,561.0,0.114,partial
 21,Refining of mineral oil,C19-C20,96.7,0.710,yes
 22,Production of coke,C19-C20,4.9,0.681,yes
 23,Metal ore roasting/sintering,C24,1.8,0.961,yes

@@ -1,5 +1,10 @@
 # Geocode EU-ETS manufacturing installations (EUETS.info/Abrell 2024, eutl_2024_202410)
 # to NUTS-3/NUTS-2 and aggregate verified emissions + free allocation. Vintage 2023.
+# Manufacturing = (a) the Annex-I process activities 21-44, mapped by activity
+# code, plus (b) cross-cutting fuel-combustion installations (activity 20)
+# attributed to a manufacturing sector via the installation NACE code
+# (divisions 10-33). NACE 35 power/heat, non-manufacturing NACE, and
+# combustion installations without a NACE code stay excluded.
 suppressMessages({library(dplyr); library(sf); library(tidyr)})
 
 RAW <- "/tmp/eutl_validation"
@@ -14,17 +19,41 @@ sec_of <- c(`35`="C16-C18",`36`="C16-C18",
             `29`="C23",`30`="C23",`31`="C23",`32`="C23",`33`="C23",`34`="C23",
             `23`="C24",`24`="C24",`25`="C24",`26`="C24",`27`="C24",`28`="C24")
 mfg  <- as.integer(names(sec_of))
+
+# NACE division -> sector, for activity-20 (fuel combustion) installations
+nace_sec <- c(`10`="C10-C12",`11`="C10-C12",`12`="C10-C12",
+              `13`="C13-C15",`14`="C13-C15",`15`="C13-C15",
+              `16`="C16-C18",`17`="C16-C18",`18`="C16-C18",
+              `19`="C19-C20",`20`="C19-C20",
+              `21`="C21-C22",`22`="C21-C22",
+              `23`="C23",`24`="C24",
+              `25`="C25+C28",`28`="C25+C28",
+              `26`="C26-C27",`27`="C26-C27",
+              `29`="C29-C30",`30`="C29-C30",
+              `31`="C31-C33",`32`="C31-C33",`33`="C31-C33")
+
 eu27 <- c("AT","BE","BG","CY","CZ","DE","DK","EE","ES","FI","FR","HR","HU","IE","IT",
           "LT","LU","LV","MT","NL","PL","PT","RO","SE","SI","SK","GR")
 
 inst <- read.csv(file.path(RAW, "installation.csv"), stringsAsFactors = FALSE)
 comp <- read.csv(file.path(RAW, "compliance.csv"),  stringsAsFactors = FALSE)
 
-im <- inst |>
+im_proc <- inst |>
   filter(activity_id %in% mfg, country_id %in% eu27,
          !is.na(latitudeGoogle), !is.na(longitudeGoogle)) |>
-  mutate(Sector_ID  = sec_of[as.character(activity_id)],
-         Country_ID = ifelse(country_id == "GR", "EL", country_id)) |>
+  mutate(Sector_ID = sec_of[as.character(activity_id)])
+
+im_comb <- inst |>
+  filter(activity_id == 20, country_id %in% eu27,
+         !is.na(nace_id), floor(nace_id) %in% 10:33,
+         !is.na(latitudeGoogle), !is.na(longitudeGoogle)) |>
+  mutate(Sector_ID = nace_sec[as.character(floor(nace_id))])
+
+cat("process installations (act 21-44):", nrow(im_proc),
+    "| combustion with manufacturing NACE (act 20):", nrow(im_comb), "\n")
+
+im <- bind_rows(im_proc, im_comb) |>
+  mutate(Country_ID = ifelse(country_id == "GR", "EL", country_id)) |>
   select(id, Country_ID, activity_id, Sector_ID, nace_id, latitudeGoogle, longitudeGoogle)
 
 n3 <- giscoR::gisco_get_nuts(nuts_level = "3", year = "2021", resolution = "03") |>

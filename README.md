@@ -28,16 +28,15 @@ Regio-Decarb-Systemic-Framework/
 
 ### External data (not auto-downloaded)
 
-Four files must be downloaded manually and placed under `Code and data/Initial data/`:
+Three files must be downloaded manually and placed under `Code and data/Initial data/`:
 
 | File | Source |
 |------|--------|
-| `Non sector data/qog_eureg.csv` | [QoG EU Regional Dataset](https://www.gu.se/en/quality-government/qog-data/data-downloads/eu-regional-dataset) |
-| `Non sector data/qog_ei_eureg.csv` | Same website |
+| `Non sector data/qog_ei_eureg.csv` | [QoG Environmental Indicators](https://www.gu.se/en/quality-government/qog-data/data-downloads/environmental-indicators-dataset) |
 | `Non sector data/ENSPRESO_Integrated_Data/ENSPRESO_Integrated_NUTS2_Data.csv` | [JRC ENSPRESO](https://data.jrc.ec.europa.eu/) |
 | `Non sector data/TECH-RIS.xlsx` | [EC Regional Innovation Scoreboard](https://research-and-innovation.ec.europa.eu/statistics/performance-indicators/regional-innovation-scoreboards) — annual bulk Excel, no stable URL. Place the latest release at this path. |
 
-All other inputs are auto-downloaded from Eurostat at pipeline run-time.
+The EQI institutions input (`Non sector data/qog_eqi_long_24.csv`, [EQI standalone release](https://www.gu.se/en/quality-government/qog-data/data-downloads/european-quality-of-government-index)) is small and committed to the repo. All other inputs are auto-downloaded from Eurostat at pipeline run-time.
 
 ### How years are chosen
 

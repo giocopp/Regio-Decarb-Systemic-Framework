@@ -9,8 +9,8 @@
 #'   `empl_weights` tibble (Country_ID, NUTS_ID, Sector_ID, pers_employed, weight).
 #' @param pool If TRUE, min-max scale non-Policy indicators across the whole
 #'   panel (group by Indicator only) instead of within (Indicator x Sector_ID).
-#'   Used by the cross-sector (Option A) carbon-cost exposure. Default FALSE
-#'   preserves the within-sector baseline.
+#'   Used by the pooled Vulnerability of the headline TRI (R/exposure.R).
+#'   Default FALSE preserves the within-sector baseline.
 #' @return List with `$long` (long normalised tibble) and `$wide`
 #'   (one column per indicator using Value_N).
 normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {

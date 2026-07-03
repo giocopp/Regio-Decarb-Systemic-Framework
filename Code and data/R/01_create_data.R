@@ -638,70 +638,61 @@ create_scope3 <- function(empl_weights) {
 
 #' Extract European Quality of Government Index (EQI) at NUTS-2 level
 #'
-#' Reads QoG EU Regional Dataset, filters to the 2017 EQI survey wave, and
-#' keeps EU-27 NUTS-2 regions only.
+#' Reads the standalone EQI regional release (qog_eqi_long_24.csv, Charron
+#' et al. 2024; waves 2010-2024) and uses the requested wave (default 2024,
+#' the latest). Countries surveyed at NUTS-2 enter directly (NUTS-2021
+#' codes; HR02/HR05/HR06 are recombined to HR04 downstream in
+#' reshape_to_grid). Belgium and Germany are surveyed at NUTS-1 and are
+#' replicated to their NUTS-2 regions; the single-NUTS-2 states (CY, EE,
+#' LU, LV, MT) carry the national score.
 #'
-#' @param qog_path Path to qog_eureg.csv
+#' @param qog_path Path to qog_eqi_long_24.csv
+#' @param wave EQI survey year to use (default 2024)
 #' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
 #'   Variable, Unit, Value
-create_qog <- function(qog_path, base_data_path) {
+create_qog <- function(qog_path, base_data_path, wave = 2024L) {
 
-  qog <- readr::read_csv(qog_path, show_col_types = FALSE)
+  eqi <- readr::read_csv(qog_path, show_col_types = FALSE)
 
-  # Determine latest available EQI survey year (target: 2017)
-  eqi_avail <- qog |>
-    dplyr::filter(!is.na(eqi_score_nuts2) | !is.na(eqi_score_nuts0)) |>
-    dplyr::distinct(year) |>
-    dplyr::pull(year)
-  eqi_year <- if (2017 %in% eqi_avail) 2017L else max(eqi_avail)
+  w <- eqi |>
+    dplyr::filter(year == wave, NUTS0_code %in% eu27, !is.na(EQI))
+  if (nrow(w) == 0) stop("create_qog: no EQI rows for wave ", wave)
 
-  # ── Pass 1: NUTS-2 EQI (16 countries with regional surveys) ────
-  qog_nuts2 <- qog |>
-    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts2),
-                  !is.na(nuts2), nchar(nuts2) == 4,
-                  substr(nuts2, 1, 2) %in% eu27) |>
-    dplyr::transmute(NUTS_ID = nuts2, EQI = eqi_score_nuts2,
-                     EQI_level = "NUTS-2")
-
-  # ── Pass 2: NUTS-0 EQI (national fallback for missing countries) ─
-  # The qog_eureg.csv carries national EQI in the eqi_score_nuts0 column
-  # on rows where nuts2 is NA and nuts0 = country code.
-  qog_nuts0 <- qog |>
-    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts0),
-                  is.na(nuts2), nuts0 %in% eu27) |>
-    dplyr::select(Country_CD = nuts0, EQI_nat = eqi_score_nuts0)
-
-  # NUTS-2 region list per country
+  # NUTS-2 region list per country (base grid, NUTS-2021)
   nuts2_grid <- readxl::read_xlsx(base_data_path) |>
     dplyr::filter(nchar(NUTS_ID) == 4,
                   substr(NUTS_ID, 1, 2) %in% eu27) |>
-    dplyr::transmute(NUTS_ID, Country_CD = substr(NUTS_ID, 1, 2))
+    dplyr::distinct(NUTS_ID) |>
+    dplyr::mutate(Country_CD = substr(NUTS_ID, 1, 2),
+                  NUTS1_CD   = substr(NUTS_ID, 1, 3))
 
-  countries_with_nuts2 <- substr(qog_nuts2$NUTS_ID, 1, 2) |> unique()
-  fallback_rows <- nuts2_grid |>
-    dplyr::filter(!Country_CD %in% countries_with_nuts2) |>
-    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
-    dplyr::transmute(NUTS_ID,
-                     EQI = EQI_nat,
-                     EQI_level = "NUTS-0 (national, replicated)")
+  # ── Pass 1: countries surveyed at NUTS-2 — use directly ────────
+  qog_nuts2 <- w |>
+    dplyr::filter(nuts_level == 2, !is.na(NUTS2_code)) |>
+    dplyr::transmute(NUTS_ID = NUTS2_code, EQI, EQI_level = "NUTS-2")
 
-  # Final fallback: NUTS-2 regions in base_data not yet covered by either
-  # pass (e.g. Ireland's IE04/IE05/IE06 vs the NUTS-2013 IE01/IE02 in the
-  # source) get the country NUTS-0 EQI.
-  missing_nuts2 <- nuts2_grid |>
-    dplyr::anti_join(qog_nuts2, by = "NUTS_ID") |>
-    dplyr::anti_join(fallback_rows, by = "NUTS_ID") |>
-    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
-    dplyr::transmute(NUTS_ID, EQI = EQI_nat,
-                     EQI_level = "NUTS-0 (national, mismatched NUTS-2 codes)")
+  # ── Pass 2: countries surveyed at NUTS-1 (BE, DE) — replicate ──
+  qog_nuts1 <- nuts2_grid |>
+    dplyr::inner_join(w |>
+                        dplyr::filter(nuts_level == 1, !is.na(NUTS1_code)) |>
+                        dplyr::transmute(NUTS1_CD = NUTS1_code, EQI),
+                      by = "NUTS1_CD") |>
+    dplyr::transmute(NUTS_ID, EQI, EQI_level = "NUTS-1 (replicated)")
 
-  combined <- dplyr::bind_rows(qog_nuts2, fallback_rows, missing_nuts2)
+  # ── Pass 3: countries surveyed nationally (single-NUTS-2 states) ─
+  qog_nuts0 <- nuts2_grid |>
+    dplyr::inner_join(w |>
+                        dplyr::filter(nuts_level == 0) |>
+                        dplyr::transmute(Country_CD = NUTS0_code, EQI),
+                      by = "Country_CD") |>
+    dplyr::transmute(NUTS_ID, EQI, EQI_level = "NUTS-0 (national, replicated)")
 
-  # One row per NUTS_ID with the most specific EQI level available;
-  # NUTS-2 wins over NUTS-0 fallbacks.
+  combined <- dplyr::bind_rows(qog_nuts2, qog_nuts1, qog_nuts0)
+
+  # One row per NUTS_ID with the most specific EQI level available.
   level_priority <- c("NUTS-2" = 1L,
-                      "NUTS-0 (national, replicated)" = 2L,
-                      "NUTS-0 (national, mismatched NUTS-2 codes)" = 3L)
+                      "NUTS-1 (replicated)" = 2L,
+                      "NUTS-0 (national, replicated)" = 3L)
   collapsed <- combined |>
     dplyr::mutate(.prio = level_priority[EQI_level]) |>
     dplyr::filter(!is.na(EQI)) |>

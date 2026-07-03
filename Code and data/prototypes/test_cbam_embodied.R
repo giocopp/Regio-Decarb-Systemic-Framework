@@ -5,7 +5,7 @@
 # country x sector comparison isolates the intensity effect.
 # Run from "Code and data/":  Rscript prototypes/test_cbam_embodied.R
 suppressMessages({library(dplyr); library(Matrix)})
-source("R/utils.R"); source("R/exposure_cost.R")
+source("R/utils.R"); source("R/exposure.R")
 
 paths <- figaro_cache_files()
 io  <- readRDS(paths[["io"]]); ghg <- readRDS(paths[["ghg"]])

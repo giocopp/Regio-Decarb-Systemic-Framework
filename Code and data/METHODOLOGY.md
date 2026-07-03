@@ -12,8 +12,8 @@ Indexed over $r$ ∈ EU-27 NUTS-2 regions, $s$ ∈ 12 manufacturing sectors (NAC
 
 The pipeline produces **two TRI variants**:
 
-1. **Headline — carbon-cost-at-risk TRI** (`risk_data_cost` target, §10.1): Exposure is the euro carbon cost a region-sector faces once EU carbon pricing fully bites (EUTL plant-level ETS cost + CBAM cost on embodied imports, priced at full 2026–2034 phase-in), normalised **pooled across all region × sector cells**; Vulnerability is the pooled 5-dimension adaptive-capacity composite (§9.1). The pooled (cross-sector) normalisation is what allows a sector-level price signal to survive: under within-sector min-max any per-sector constant cancels exactly (§10.2). The legislated 2024→2034 phase-in path is the hazard layer (`cost_trajectory` target, §10.1.4).
-2. **Legacy baseline — emissions-based TRI** (`risk_data` target, §10.2): the index as submitted to Climate Policy in Oct-2025 (Scope 1/2/3 emissions exposure, within-sector normalisation, 6 vulnerability dimensions). Retained for comparison; the sensitivity workbook reports the Spearman between the two.
+1. **Headline — covered-carbon TRI** (`risk_data` target, §10.1): Exposure is the **covered carbon volume a region-sector carries** — its EUTL plant-level ETS verified emissions plus the embodied carbon in its extra-EU imports of CBAM-covered goods (both in tonnes CO2) — normalised **pooled across all region × sector cells** (so a cell's score reflects its carbon volume relative to all manufacturing, not rescaled within its own sector; §10.1). Vulnerability is the pooled 5-dimension adaptive-capacity composite (§9.1). No carbon price enters: a single EU-wide EUA price is a common scalar that cancels under normalisation, so it never moved the ranking — the priced formulation and its 2024→2034 phase-in trajectory were removed (§10.1).
+2. **Raw-emissions baseline TRI** (`risk_data_raw_emissions` target, §10.2): the index as submitted to Climate Policy in Oct-2025 (Scope 1/2/3 emissions exposure, within-sector normalisation, 6 vulnerability dimensions). Retained for comparison only; the sensitivity workbook reports the Spearman between the two.
 
 Both variants build Exposure and Vulnerability from harmonised regional indicators normalised to $[0.01, 0.99]$ at the indicator level.
 
@@ -75,27 +75,24 @@ All indicators are downloaded automatically by `R/01_create_data.R` from Eurosta
 | Capital_Stock_Based_Prod | `nama_10_cp_a21` (NCS_HW, N11N, I20 — index 2020=100) | National replicated to NUTS-2 | `create_capital_stock_prod` |
 | Import_ExtraEU, Export_ExtraEU | `ext_tec01` (partner=EXT_EU, sizeclas=TOTAL, THS_EUR) | National → NUTS-2 by empl share | `create_trade_extra_eu` |
 | BERD (regional R&D intensity) | `rd_e_gerdreg` (business-sector R&D, % of regional GDP) | NUTS-2 (region-level, replicated across sectors) | `create_regional_berd` |
-| QoG_Index | QoG EU Regional Dataset, EQI 2017 wave | NUTS-2 if available; NUTS-0 (national) replicated otherwise; NUTS-0 fallback for unmatched NUTS-2021 codes (Ireland IE04/IE05/IE06) | `create_qog` |
+| QoG_Index | EQI **2024 wave**, standalone regional release `qog_eqi_long_24.csv` (Charron et al., University of Gothenburg) | NUTS-2 direct where surveyed at NUTS-2 (NUTS-2021 codes); BE and DE are surveyed at NUTS-1 → replicated to their NUTS-2 regions; single-NUTS-2 states (CY, EE, LU, LV, MT) carry the national score | `create_qog` |
 | Climate_Mitigation_Laws | QoG Environmental Indicators (`ccl_nmitlp`, latest year per country) | National replicated to NUTS-2 | `create_climate_laws` |
 | Sector_Concentration | Derived from `sbs_r_nuts2021` (share of the focal NACE sub-sector in the region's manufacturing employment) | NUTS-2 × Sector | `create_sector_concentration` |
 | RE_Potential | JRC ENSPRESO (wind onshore + solar + biomass, medium scenario, TWh) | NUTS-2 | `create_re_potential` |
 | Cohesion_Fund | EU Cohesion Open Data API (ERDF+CF+ESF 2014-2020 MFF, regionalised) ÷ NUTS-2 population from `demo_r_d2jan` (2020) | NUTS-2 | `create_cohesion_fund` |
 | Regional_Innovation | EC Regional Innovation Scoreboard (manual download — the only non-scripted input) | NUTS-2 | manual xlsx |
-| Policy_Pressure | Hard-coded ETS + CBAM coverage scores per NACE sector. **Computed for reference only — in NO composite** (a per-sector constant cancels exactly under within-sector normalisation, §10.2; carbon pricing enters the headline TRI as a cost, §10.1) | Constant per sector | `create_policy_pressure` |
+| Policy_Pressure | Hard-coded ETS + CBAM coverage scores per NACE sector. **Computed for reference only — in NO composite** (a per-sector constant cancels exactly under within-sector normalisation, §10.2; ETS/CBAM coverage enters the headline TRI as covered carbon volume, §10.1) | Constant per sector | `create_policy_pressure` |
 
-Carbon-cost exposure inputs (headline TRI, §10.1):
+Covered-carbon Exposure inputs (headline TRI, §10.1):
 
 | Input | Source | Geo level | Function / target |
 |---|---|---|---|
-| ETS verified emissions (2023, tonnes) | EUTL via EUETS.info (Abrell), installation-level, Google-geocoded; built once by `prototypes/ets_geocode.R` → `Initial data/EUTL_euets_info/ets_nuts2_sector.csv` | Installation → NUTS-2 (point-in-polygon, NUTS-3 carried) | `read_ets_nuts2` → `ets_geo` |
-| Free-allocation share (2023) | Same EUTL panel: allocatedFree / verified, capped at 1 | Country × sector | `read_ets_freealloc` → `ets_freealloc` |
-| CBAM embodied-import carbon | FIGARO `naio_10_fcp_ii4` + `env_ac_ghgfp` (cache written by `create_scope3`); covered goods C20/C23/C24, charged to all importing sectors | National → NUTS-2 (hybrid weights: geocoded plant emission shares for C16-C18/C19-C20/C23/C24, employment shares otherwise) | `compute_cbam_leg` → `cbam_leg` |
-| EUA price | €64.8/tCO2 — 2024 annual average (ESMA EU Carbon Markets Report 2024). Common scalar: sets the EUR interpretation, not the ranking | Scalar | `eua_price_eur` |
-| CBAM phase-in factor F(t) | Reg. (EU) 2023/956 Art. 31 + revised ETS Directive Art. 10a (2026: 2.5% → 2034: 100%); free allocation = base × (1−F) | Scalar per year | `cbam_phase_factor` |
+| ETS verified emissions (2023, tonnes) | EUTL via EUETS.info (Abrell), installation-level, Google-geocoded; built once by `prototypes/ets_geocode.R` → `Initial data/EUTL_euets_info/ets_nuts2_sector.csv`. Manufacturing = Annex-I process activities 21–44 (mapped by activity code) **plus activity-20 fuel-combustion installations attributed via the installation NACE code (divisions 10–33)**; NACE-35 power/heat and combustion installations without a NACE code are excluded | Installation → NUTS-2 (point-in-polygon, NUTS-3 carried) | `read_ets_nuts2` → `ets_geo` |
+| CBAM embodied-import carbon | FIGARO `naio_10_fcp_ii4` + `env_ac_ghgfp` (cache written by `create_scope3`); covered goods C20/C23/C24, charged to all importing sectors | National → NUTS-2 by the importing sector's **employment shares** for all sectors — the pipeline's canonical downscaling rule (§5), adopted 2026-07-03 after the external trade validation (§14). The former plant-emission hybrid is retained only as the `cbam_leg_hybrid` sensitivity variant | `compute_cbam_leg` → `cbam_leg` |
 
 External (non-Eurostat) sources requiring manual download:
-- QoG EU Regional Dataset (`qog_eureg.csv`) — University of Gothenburg
-- QoG Environmental Indicators (`qog_ei_eureg.csv`) — same
+- QoG Environmental Indicators (`qog_ei_eureg.csv`) — University of Gothenburg
+- EQI standalone regional release (`qog_eqi_long_24.csv`) — same; small, committed to the repo
 - JRC ENSPRESO regional renewable potentials
 - EC Regional Innovation Scoreboard xlsx
 - EUTL installation database (EUETS.info bulk zip; re-download URL in `Initial data/EUTL_euets_info/README.md` — only the derived CSVs are committed)
@@ -108,7 +105,7 @@ Per-cell fallback: where a region has data in an earlier year but is missing in 
 
 Special cases (year not driven by the helper):
 - **Scope 3** uses `min(dataEnd(naio_10_fcp_ii4), dataEnd(env_ac_ghgfp))` — both FIGARO tables must align at the same vintage for the MRIO computation to be coherent.
-- **QoG_Index** uses the **2017 EQI survey wave** (Charron et al.). EQI is a triennial survey; 2017 is the latest fully published wave.
+- **QoG_Index** uses the **2024 EQI survey wave** (Charron et al.) — the latest of the five published rounds (2010, 2013, 2017, 2021, 2024) in the standalone regional release.
 - **Cohesion_Fund** uses the fixed 2014–2020 Multiannual Financial Framework totals (not annual data).
 - **Policy_Pressure** is hard-coded per NACE sector.
 
@@ -120,7 +117,7 @@ A single canonical rule governs every indicator whose Eurostat source is nationa
 
 - **Extensive quantities** (€, kt CO2eq, GWh, persons, counts) → **employment-share downscaling**. For each (Country, Sector) the national value is split across the country's NUTS-2 regions in proportion to the region's share of national manufacturing employment in that sector. Implemented by `downscale_national_to_nuts2()` in `R/utils.R`, using the `weight` column of the `empl_weights` target (region's pers_employed in that Country × Sector divided by national total, re-normalised to sum to 1 across regions). For Sector "C" (Total Manufacturing) the weight is the region's share of total manufacturing employment.
 
-  Where a sector-specific weight is missing (e.g. Luxembourg has zero C24 employment in `sbs_r_nuts2021` but reports C24 emissions in `env_ac_ainah_r2`), the helper falls back to the country's Sector-C weight for that NUTS-2.
+  Where a sector-specific weight is missing (e.g. Luxembourg has zero C24 employment in `sbs_r_nuts2021` but reports C24 emissions in `env_ac_ainah_r2`), the helper falls back to the country's Sector-C weight for that NUTS-2. The fallback weights are **not renormalised**, so a country×sector containing filled cells allocates slightly more than its national total (on the CBAM component: panel sum 259.3 Mt vs 258.6 Mt of pre-downscale FIGARO national totals, +0.3%) — accepted so that no region with real activity is dropped; national totals are preserved exactly wherever every region carries its own weight.
 
 - **Intensive quantities** (ratios, indices, percentages) → **uniform replication**. Each NUTS-2 region of a country receives the same national value. Implemented by `replicate_national_to_nuts2()` in `R/utils.R`. Applies to Fossil_Share, Renewables_Share, and Capital_Stock_Based_Prod.
 
@@ -178,39 +175,33 @@ Each dimension score is re-normalised to [0.01, 0.99] within Sector_ID. Vulnerab
 
 NAs are imputed cell-by-cell at the indicator stage from the country × sector median (`R/utils.R::impute_with_median`) before the dimension means are computed. Remaining NAs (where the country has no other regions to draw a median from) propagate via `rowMeans(na.rm = TRUE)`.
 
-### 9.1 Vulnerability for the carbon-cost TRI (`vulnerability_pooled`)
+### 9.1 Vulnerability for the headline TRI (`vulnerability_pooled`)
 
-The headline TRI uses a **pooled, 5-dimension** variant (`build_vulnerability_pooled()` in `R/exposure_cost.R`):
+The headline TRI uses a **pooled, 5-dimension** variant (`build_vulnerability_pooled()` in `R/exposure.R`):
 
 - Indicators are normalised **pooled across sectors** (`pool = TRUE` in `normalize_indicators()`), so Vulnerability lives on the same cross-sector scale as the pooled Exposure (the two enter $\sqrt{E}\cdot\sqrt{V}$ symmetrically).
-- **Supply_Chain (= Import_ExtraEU) is dropped → 5 dimensions** (Energy, Labour, Technology, Institutions, Diversification). Extra-EU imports are already priced in the CBAM leg of Exposure; keeping them in Vulnerability would count imports on both sides of the geometric mean.
-- Same NA imputation; dimension scores are row-means of the pooled indicator values; Vulnerability is the dimension row-mean normalised at the top level with the scheme matching `tri_norm_mode` ("rank" → percentile rank, otherwise min-max — the log step applies only to the skewed raw cost, not to a bounded mean).
+- **Supply_Chain (= Import_ExtraEU) is dropped → 5 dimensions** (Energy, Labour, Technology, Institutions, Diversification). Extra-EU imports are already priced in the CBAM component of Exposure; keeping them in Vulnerability would count imports on both sides of the geometric mean.
+- Same NA imputation; dimension scores are row-means of the pooled indicator values; Vulnerability is the dimension row-mean normalised at the top level with the scheme matching `tri_norm_mode` ("rank" → percentile rank, otherwise min-max — the log step applies only to the skewed raw exposure volume, not to a bounded mean).
 
 ## 10. Exposure
 
-### 10.1 Headline: carbon-cost-at-risk (`R/exposure_cost.R`)
+### 10.1 Headline: covered-carbon Exposure (`R/exposure.R`)
 
-Exposure is the **euro carbon cost a region-sector faces once EU carbon pricing fully bites**:
+Exposure is the **covered carbon volume a region-sector carries** — its ETS verified emissions plus the embodied carbon in its extra-EU imports of CBAM-covered goods (tonnes CO2):
 
-$$\text{Exposure\_raw}_{r,s} = \underbrace{Q^{ETS}_{r,s} \cdot P \cdot (1 - fa_{c,s})}_{\text{ETS leg}} + \underbrace{Q^{CBAM}_{r,s} \cdot P \cdot F}_{\text{CBAM leg}}$$
+$$\text{Exposure\_raw}_{r,s} = \underbrace{Q^{ETS}_{r,s}}_{\text{ETS component}} + \underbrace{Q^{CBAM}_{r,s}}_{\text{CBAM component}} \qquad (\text{tonnes CO}_2)$$
 
 $$\text{Exposure}_{r,s} = \text{range01}(\text{Exposure\_raw}_{r,s}) \quad \text{POOLED across all } (r,s) \text{ cells}$$
 
-- $Q^{ETS}$: EUTL installation-level **verified emissions** (2023, tonnes), placed at NUTS-2 by point-in-polygon on the geocoded plant coordinates — real production geography, not employment downscaling, for the four ETS sectors (C16-C18, C19-C20, C23, C24).
-- $fa_{c,s}$: country × sector **free-allocation share** (allocatedFree / verified, capped at 1 — over-allocated sectors face zero, not negative, cost).
-- $Q^{CBAM}$: embodied direct carbon in **extra-EU imports of covered goods** (FIGARO MRIO; origin industries C20/C23/C24 as the covered-goods proxy), charged to **every importing manufacturing sector** — CBAM falls on whoever imports covered inputs, which is why all 11 sub-sectors carry exposure. Caveat: FIGARO 2-digit industries are broader than the exact CBAM goods list and the full EUA price is applied to all embodied import carbon (no netting of any carbon price paid abroad), so the CBAM leg is an upper bound on incidence. This sector-MRIO estimation is standard practice (EEBT/MRIO — Kanemoto et al. 2012; Cadarso et al. 2018); narrowing to the exact CBAM product list would need product/CN-level trade data outside this composite's Eurostat-MRIO scope, and Art. 9 netting is small for the major (low-carbon-price) origins. See `Review/EXPOSURE_CARBON_COST_REVISION.md` §23 and `EXPOSURE_CARBON_COST_LITERATURE.md` §5b for the literature justification and an implemented full-embodied-intensity robustness variant (`compute_cbam_leg(intensity = "embodied")`), which is ranking-robust — NUTS-2×sector Spearman 0.997 vs the direct headline, confirming the choice.
-- $P$: EUA price (€64.8/t, 2024 average) — a common scalar, so it sets the EUR magnitudes, not the ranking.
-- **Headline policy state: full phase-in** ($fa = 0$, $F = 1$; the 2034 end-state of Reg. 2023/956). At 2024 rules free allocation shields most heavy-industry process emissions and CBAM is not yet charging, so pricing the headline at 2024 would measure almost nothing (~€2bn over ~530 cells). Note the ordinal consequence: at full phase-in the price factors are uniform, so the headline *ranking* is driven by the quantity-and-location structure; the price structure bites in the interior years (`cost_trajectory`, §10.1.4) and in the EUR magnitudes.
+- $Q^{ETS}$: EUTL installation-level **verified emissions** (2023, tonnes), placed at NUTS-2 by point-in-polygon on the geocoded plant coordinates — real production geography, not employment downscaling. Covered installations are the Annex-I process activities 21–44 (which map to the four heavy sectors C16-C18, C19-C20, C23, C24) **plus activity-20 fuel-combustion installations attributed to their manufacturing sector via the installation NACE code** — so every sub-sector can carry plant-level ETS emissions (e.g. food-industry boilers in C10-C12, vehicle-plant power stations in C29-C30), while NACE-35 power/heat stays excluded.
+- $Q^{CBAM}$: embodied direct carbon in **extra-EU imports of covered goods** (FIGARO MRIO; origin industries C20/C23/C24 as the covered-goods proxy), charged to **every importing manufacturing sector** — CBAM falls on whoever imports covered inputs, which is why all 11 sub-sectors carry exposure. Caveat: FIGARO 2-digit industries are broader than the exact CBAM goods list, so the CBAM component is an upper bound on covered import carbon. This sector-MRIO estimation is standard practice (EEBT/MRIO — Kanemoto et al. 2012; Cadarso et al. 2018); narrowing to the exact CBAM product list would need product/CN-level trade data outside this composite's Eurostat-MRIO scope. See `Review/EXPOSURE_CARBON_COST_REVISION.md` §23 and `EXPOSURE_CARBON_COST_LITERATURE.md` §5b for the literature justification and an implemented full-embodied-intensity robustness variant (`compute_cbam_leg(intensity = "embodied")`), ranking-robust at NUTS-2×sector Spearman ≈ 0.99 vs the direct headline.
+- **No carbon price.** The two components enter as raw tonnes CO2. A price would be a single EU-wide EUA scalar (there is no sub-national carbon price), which cancels exactly under min-max — and monotonically under log/rank — so it never changed the ranking or the E×V interaction inside Risk. The earlier priced formulation (EUA × free-allocation and CBAM-coverage factors) and its legislated 2024–2034 phase-in trajectory were therefore removed. All covered carbon is counted in full (both components, no free-allocation discount, no phase-in ramp). The published exposure columns are `exposure_ETS`, `exposure_CBAM`, and `exposure_total` (tonnes CO2).
 
-**Normalisation (`tri_norm_mode = "minmax"`).** The headline applies plain pooled min-max (linear `range01`), consistent with the min-max used at the indicator level ("min-max everywhere"). Because the raw cost spans orders of magnitude, the linear scale concentrates most cells near 0 (Exposure sd ≈ 0.05) — two alternatives are therefore wired and reported in the sensitivity workbook: `"log"` (`range01(log1p(.))`, sd ≈ 0.25) and `"rank"` (percentile rank — uniform spread). All three preserve the identical cell-level *ordering* of Exposure; the choice affects spacing, hence map readability and the E×V interaction inside Risk. Switch by editing the `tri_norm_mode` target in `_targets.R`. True-zero cost cells keep Exposure = 0 under every scheme (→ "Zero Risk" band).
+**Normalisation (`tri_norm_mode = "minmax"`).** The headline applies plain pooled min-max (linear `range01`), consistent with the min-max used at the indicator level ("min-max everywhere"). Because the raw carbon volume spans orders of magnitude, the linear scale concentrates most cells near 0 (Exposure sd ≈ 0.05) — two alternatives are therefore wired and reported in the sensitivity workbook: `"log"` (`range01(log1p(.))`, sd ≈ 0.25) and `"rank"` (percentile rank — uniform spread). All three preserve the identical cell-level *ordering* of Exposure; the choice affects spacing, hence map readability and the E×V interaction inside Risk. Switch by editing the `tri_norm_mode` target in `_targets.R`. True-zero cells keep Exposure = 0 under every scheme (→ "Zero Risk" band).
 
-**Why pooled (cross-sector) normalisation.** A carbon price varies at most by country × sector and has zero within-sector variation. Under the within-sector min-max of §8 any per-sector constant cancels exactly — verified: the old Policy_Pressure indicator had **zero** effect on the baseline TRI (dropping it, or switching + to ×, leaves the index identical). Pooling is what lets policy variation survive into the index; `assemble_exposure_cost(within_sector = TRUE)` reproduces the wash-out as a diagnostic (`prototypes/test_exposure_cost.R`).
+**Why pooled (cross-sector) normalisation.** Exposure is normalised across all region × sector cells together, not within each sector, so carbon volumes stay comparable across sectors: a cell's score reflects its covered carbon relative to *all* manufacturing, and genuinely high-volume activities (steel C24, cement C23, refining/chemicals C19-C20) score high while the light sectors score low. Within-sector min-max would instead rescale each sector internally — giving every sector its own top-Exposure cells and erasing the cross-sector volume gradient that is the point of the measure. `assemble_exposure(within_sector = TRUE)` computes the within-sector variant for comparison.
 
-#### 10.1.4 Hazard layer: the 2024–2034 phase-in trajectory
-
-`build_cost_trajectory()` re-prices the panel along the legislated path (free allocation = base × (1−F(t)), CBAM coverage = F(t), per Reg. 2023/956): total cost in € bn, ETS share of the cost, number of priced cells, and the Spearman of each year's ranking against the 2034 headline. Written to the `phase_in_trajectory` sheet of `Final data/Sensitivity_Analysis.xlsx`.
-
-### 10.2 Legacy baseline: emissions-based Exposure (`risk_data`)
+### 10.2 Raw-emissions baseline Exposure (`risk_data_raw_emissions`)
 
 Exposure is the row-mean of three indicators, re-normalised to [0.01, 0.99] within Sector_ID:
 
@@ -247,14 +238,14 @@ $$\text{Risk}_{r,s} = \text{Exposure}_{r,s}^{\,0.5} \cdot \text{Vulnerability}_{
 (Geometric aggregation with equal weights, $\alpha = 0.5$.)
 
 The re-scaling scope follows the variant's normalisation scope:
-- **Headline (carbon-cost) TRI**: Risk_norm = range01(Risk) **pooled** over the 11-sub-sector panel; the "C" roll-up (per-region sum of raw costs; Vulnerability = regional mean of sub-sector scores) is normalised separately across regions.
-- **Legacy baseline**: Risk_norm = range01(Risk) within Sector_ID.
+- **Headline TRI**: Risk_norm = range01(Risk) **pooled** over the 11-sub-sector panel; the "C" roll-up (per-region sum of raw covered carbon; Vulnerability = regional mean of sub-sector scores) is normalised separately across regions.
+- **Raw-emissions baseline**: Risk_norm = range01(Risk) within Sector_ID.
 
-When Exposure = 0 (headline: zero carbon cost; baseline: raw Scope1_Emissions = 0), Exposure is set to NA so the risk is undefined (not artificially zero from the geometric formula). Risk_norm is then NA → Risk_Band = "Zero Risk".
+When Exposure = 0 (headline: zero covered carbon; baseline: raw Scope1_Emissions = 0), Exposure is set to NA so the risk is undefined (not artificially zero from the geometric formula). Risk_norm is then NA → Risk_Band = "Zero Risk".
 
-A **cell** is one (NUTS-2 region × manufacturing sub-sector) pair — the unit of analysis (§1): 230 regions × 11 sub-sectors = 2,530 cells, plus the 230 "C" roll-up rows. In the headline TRI a **Zero-Risk cell** is a region-sector with no carbon-cost base at all: no ETS installation of that sector in that region AND no CBAM-covered imports attributed to it (~307 of 2,530 cells). They concentrate in the four ETS sectors (C19-C20, C24, C16-C18, C23) because both cost legs of those sectors follow the geocoded plant geography — a region with no steelworks has no C24 carbon cost. The seven light sectors are downscaled by employment, so nearly every region carries some cost.
+A **cell** is one (NUTS-2 region × manufacturing sub-sector) pair — the unit of analysis (§1): 230 regions × 11 sub-sectors = 2,530 cells, plus the 230 "C" roll-up rows. In the headline TRI a **Zero-Risk cell** is a region-sector with no covered carbon at all: no ETS installation of that sector in that region AND no CBAM-covered imports attributed to it (23 of 2,530 cells in the current build; the workbook's Zero-Risk *band* shows 24 rows because one further cell — LU00 × C13-C15 — carries covered carbon but an all-NA Vulnerability, so its Risk is undefined and it lands in the same band). Under the employment-share CBAM downscaling (§14) nearly every region-sector carries some import exposure, so the true zeros reduce to regions with neither an ETS plant nor reported sector employment: the island regions Voreio Aigaio (EL41) and Ionia Nisia (EL62) across all 11 sub-sectors, plus Malta × C24. (Under the former plant-emission hybrid the count was ~263, concentrated in the four heavy sectors whose CBAM share then followed the plant geography.)
 
-**Reporting convention:** descriptive statistics by sector (e.g. mean Exposure per sector) are computed on **positive cells only**, with Zero-Risk cells reported as their own category (count per sector). Mixing the zeros into a sector mean conflates "the sector faces little carbon cost here" with "the sector's priced activity does not exist here", and mechanically deflates the heavy sectors, which have many plant-less regions.
+**Reporting convention:** descriptive statistics by sector (e.g. mean Exposure per sector) are computed on **positive cells only**, with Zero-Risk cells reported as their own category (count per sector). Mixing the zeros into a sector mean conflates "the sector carries little covered carbon here" with "the sector's covered activity does not exist here", and mechanically deflates the heavy sectors, which have many plant-less regions.
 
 Risk bands are equal-width quintiles on $[0, 1]$:
 
@@ -274,20 +265,23 @@ The full pipeline is orchestrated by `_targets.R` using the `{targets}` R packag
 - **Phase 2 — Harmonise** (`R/02_harmonize.R`): reads the per-indicator xlsx files and joins them into one long tibble (region × sector × indicator).
 - **Phase 3 — Reshape** (`R/03_reshape.R`): expands to a complete grid of (region × sector × indicator), handles NUTS recombinations, applies `agg_rules` (sum vs mean) for aggregated regions.
 - **Phase 4 — Normalise** (`R/04_normalize.R`): per-employee division, winsorisation, min-max normalisation, orientation reversal.
-- **Phase 5 — Aggregate risk** (`R/05_aggregate.R`): NA imputation, Exposure / Vulnerability dimensions / TRI (legacy baseline).
-- **Phase 5b — Carbon-cost TRI** (`R/exposure_cost.R`): EUTL inputs (`ets_geo`, `ets_freealloc`), FIGARO cache (`figaro_cache`), CBAM leg (`cbam_leg`), pooled Vulnerability (`vulnerability_pooled`), headline index (`risk_data_cost`), phase-in trajectory (`cost_trajectory`).
-- **Phase 6 — Save** outputs to `Final data/`: `Risk_data_carbon_cost.xlsx` (headline), `Risk_data.xlsx` (legacy baseline), `Raw_data_not_normalized.xlsx`, `Coverage_Report.xlsx`, `Sensitivity_Analysis.xlsx`, `Top_Bottom_Regions_per_Sector.xlsx`.
-- **Phase 7 — Figures**: maps, radars, quadrants, within-country variance, cluster maps, carbon-cost three-panel map (`plot_cost_tri_maps`) (PNG, 600 DPI).
+- **Phase 5 — Risk index (headline)** (`R/exposure.R`): EUTL input (`ets_geo`), FIGARO cache (`figaro_cache`), CBAM components (`cbam_leg` employment-weighted headline, `cbam_leg_embodied`, `cbam_leg_hybrid` sensitivity), pooled Vulnerability (`vulnerability_pooled`), headline index (`risk_data`) → `Final data/Risk_data.xlsx` (`save_risk_xlsx`).
+- **Phase 6 — Raw-emissions index (comparison)** (`R/05_aggregate.R`): NA imputation, Exposure / Vulnerability dimensions / TRI (`risk_data_raw_emissions`) → `Final data/Risk_data_raw_emissions.xlsx` (`save_risk_raw_emissions_xlsx`).
+- **Phase 7 — Save raw data**: `Raw_data_not_normalized.xlsx` (`Coverage_Report.xlsx` is written in Phase 1).
+- **Phase 8 — Figures**: maps, radars, headline three-panel map (`plot_risk_maps`) — all on the headline `risk_data` (PNG, 600 DPI).
+- **Phase 9 — Sensitivity**: baseline battery (`run_sensitivity`, on the raw-emissions index) + headline comparisons (`run_risk_sensitivity`) → `Sensitivity_Analysis.xlsx`.
+- **Phase 10 — Insights**: top/bottom table (`Top_Bottom_Regions_per_Sector.xlsx`), quadrants, within-country variance, cluster maps — all on the headline `risk_data`.
 
 ## 14. Sensitivity analysis
 
-`Final data/Sensitivity_Analysis.xlsx` carries three sheets:
+`Final data/Sensitivity_Analysis.xlsx` carries two sheets:
 
-- **`baseline_battery`** — `R/07_sensitivity.R::run_sensitivity()`: the legacy TRI against six families of alternative construction choices (list below).
-- **`carbon_cost_tri`** — `run_sensitivity_cost()` (`R/exposure_cost.R`): the headline cost TRI vs the emissions baseline, vs its `minmax` and `rank` normalisation variants, vs the 2024 policy state (current free allocation, no CBAM), and vs the **full-embodied CBAM intensity** (target `cbam_leg_embodied`; ρ = 0.99 pooled / 0.99 within-sector — the CBAM intensity basis is ranking-robust, §10.1 / REVISION §23).
-- **`phase_in_trajectory`** — `build_cost_trajectory()`: total cost (€ bn), ETS share, priced cells, and rank stability along the legislated 2024–2034 phase-in.
+- **`baseline_battery`** — `R/07_sensitivity.R::run_sensitivity()`: the raw-emissions TRI against six families of alternative construction choices (list below).
+- **`risk_tri`** — `run_risk_sensitivity()` (`R/exposure.R`): the headline TRI vs the raw-emissions baseline, vs its `log` and `rank` normalisation variants, and vs the **full-embodied CBAM intensity** (target `cbam_leg_embodied`; ρ = 0.99 pooled / 0.99 within-sector — the CBAM intensity basis is ranking-robust, §10.1 / REVISION §23).
 
-Every comparison reports **two Spearman columns**: `rho_pooled` (stacked region × sector panel) and `rho_within_sector` (mean of per-sector correlations). The within-sector mean is the honest statistic for the within-sector-normalised baseline — stacking sector panels that were each normalised within sector inflates pooled agreement; the pooled column is the relevant one for the pooled (cross-sector) cost TRI.
+**External validation of the CBAM regional allocation — and the resulting weight choice** (`prototypes/cbam_trade_validation.R`): the modeled region shares of national extra-EU covered-good imports (FIGARO 2023 flows × the downscaling weights) are compared with observed regional trade statistics. Against the available anchor — ISTAT extra-EU imports by region, CPA section C, 2023 (`prototypes/observed_imports_IT_sectionC_2023.csv`; the regional SDMX flows publish CPA sections only) — the **employment-share weights fit at Spearman ρ = 0.91** (21 Italian regions) and respect the physical ceiling that a region's covered-good imports cannot exceed its total observed manufacturing imports (only micro-region Valle d'Aosta stays marginally above, 1.26× on ~€0.1bn). The former **plant-emission hybrid** (plant shares in the four heavy sectors) fit at ρ = 0.69 and breached the ceiling in Sardegna (3.4×) and Puglia (1.4×), marginally in Sicilia (1.07×), while under-allocating import/logistics hubs (Lombardia −12.5 pp, Lazio −7.5 pp) — emission shares over-weight primary producers relative to where imports actually arrive. **The headline therefore uses employment shares for all sectors (adopted 2026-07-03)** — also the conceptually right proxy (CBAM is charged to the importing users of covered inputs, and employment locates the using industry) and the pipeline's canonical downscaling rule (§5); the hybrid is retained as the `cbam_leg_hybrid` sensitivity variant. Caveats cut both ways: observed trade is attributed to the declarant/destination region (imports declared at a headquarters shift away from the plant region), and FIGARO MRIO valuations differ from customs cif. Division-level observed data (CPA 20/23/24 by region; export recipes in the script header) sharpen the test.
+
+Every comparison reports **two Spearman columns**: `rho_pooled` (stacked region × sector panel) and `rho_within_sector` (mean of per-sector correlations). The within-sector mean is the honest statistic for the within-sector-normalised baseline — stacking sector panels that were each normalised within sector inflates pooled agreement; the pooled column is the relevant one for the pooled (cross-sector) headline TRI.
 
 The six baseline families:
 
@@ -304,14 +298,13 @@ The Eurostat indicators each pick their own latest complete year (§4; audit log
 
 | Input | Vintage | Note |
 |---|---|---|
-| EUTL verified emissions + free allocation | 2023 | Latest EUETS.info release; matches the FIGARO vintage |
-| FIGARO IO + GHG (Scope 3, CBAM leg) | 2023 | `min(dataEnd)` of the two tables |
-| EUA price | 2024 annual average (€64.8/t) | Scalar; EUR interpretation only |
+| EUTL verified emissions | 2023 | Latest EUETS.info release; matches the FIGARO vintage |
+| FIGARO IO + GHG (Scope 3, CBAM component) | 2023 | `min(dataEnd)` of the two tables |
 | Scope-2 grid emission factors | 2022 (EEA/Ember) | Hard-coded in `create_scope2` |
-| EQI (QoG_Index) | 2017 survey wave | Latest fully published wave at build time |
+| EQI (QoG_Index) | 2024 survey wave | Latest published EQI round (standalone regional release) |
 | Cohesion Fund | 2014–2020 MFF | Fixed programme totals (not in composite) |
 
-Mixed vintages are inherent to a multi-source composite; the headline cost legs (EUTL 2023 × FIGARO 2023) are deliberately aligned.
+Mixed vintages are inherent to a multi-source composite; the headline carbon components (EUTL 2023 + FIGARO 2023) are deliberately aligned.
 
 Documented data quirks:
 

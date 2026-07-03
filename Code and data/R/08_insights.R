@@ -7,21 +7,12 @@
 #   plot_sector_cluster_maps()  -- employment concentration x risk score overlay
 
 # ── Constants ────────────────────────────────────────────────────────────────
-EXPOSURE_VARS <- c("Scope1_Emissions", "Scope2_Emissions",
-                   "Scope3_Emissions")
-VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour",
-               "Vuln_Supply_Chain", "Vuln_Technology",
+VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour", "Vuln_Technology",
                "Vuln_Institutions", "Vuln_Diversification")
 
-EXPOSURE_PRETTY <- c(
-  Scope1_Emissions = "Scope 1",
-  Scope2_Emissions = "Scope 2",
-  Scope3_Emissions = "Scope 3"
-)
 VULN_PRETTY <- c(
   Vuln_Energy          = "Energy",
   Vuln_Labour          = "Labour",
-  Vuln_Supply_Chain    = "Supply Chain",
   Vuln_Technology      = "Technology",
   Vuln_Institutions    = "Institutions",
   Vuln_Diversification = "Diversification"
@@ -37,13 +28,14 @@ VULN_PRETTY <- c(
 #' breakdown of which sub-indicator drives the score.
 #'
 #' Driver logic:
-#'   Top_Exposure_Driver = name of the Exposure sub-indicator with the
-#'     highest normalised value for that region-sector
+#'   Top_Exposure_Driver = which covered-carbon leg dominates the cell's
+#'     exposure_total: "ETS" (geocoded plant emissions) or "CBAM"
+#'     (embodied import carbon)
 #'   Top_Vulnerability_Driver = vulnerability dimension with highest score
 #'   Risk_Type categorises whether Exposure or Vulnerability is the bigger
 #'     contributor (Exposure > Vulnerability => "Exposure-driven", etc.)
 #'
-#' @param risk_data Tibble from aggregate_risk()
+#' @param risk_data Tibble from build_risk_data()
 #' @param k Integer, number of top and bottom regions per sector (default 5)
 #' @return Tibble with one row per (sector, rank position)
 build_top_bottom_table <- function(risk_data, k = 5L) {
@@ -52,12 +44,8 @@ build_top_bottom_table <- function(risk_data, k = 5L) {
     dplyr::filter(!is.na(Risk_norm)) |>
     dplyr::rowwise() |>
     dplyr::mutate(
-      Top_Exposure_Driver = {
-        v <- dplyr::c_across(dplyr::all_of(EXPOSURE_VARS))
-        names_v <- EXPOSURE_VARS
-        if (all(is.na(v))) NA_character_
-        else EXPOSURE_PRETTY[names_v[which.max(v)]]
-      },
+      Top_Exposure_Driver = dplyr::if_else(exposure_ETS >= exposure_CBAM,
+                                           "ETS", "CBAM"),
       Top_Vulnerability_Driver = {
         v <- dplyr::c_across(dplyr::all_of(VULN_DIMS))
         names_v <- VULN_DIMS
@@ -96,9 +84,11 @@ build_top_bottom_table <- function(risk_data, k = 5L) {
       Risk_Type,
       Top_Exposure_Driver,
       Top_Vulnerability_Driver,
-      Scope1 = round(Scope1_Emissions, 3),
-      Scope2 = round(Scope2_Emissions, 3),
-      Scope3 = round(Scope3_Emissions, 3)
+      exposure_ETS  = round(exposure_ETS),
+      exposure_CBAM = round(exposure_CBAM),
+      Scope1 = round(Scope1_Emissions, 2),
+      Scope2 = round(Scope2_Emissions, 2),
+      Scope3 = round(Scope3_Emissions, 2)
     ) |>
     dplyr::arrange(Sector_ID,
                    factor(Rank_Position,
@@ -128,8 +118,10 @@ plot_quadrant <- function(risk_data, output_dir = "Figures",
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
+  # !is.na(Risk_norm) drops Zero-Risk cells (Exposure = 0), matching the
+  # reporting convention in METHODOLOGY §12.
   df <- risk_data |>
-    dplyr::filter(Sector_ID %in% sectors,
+    dplyr::filter(Sector_ID %in% sectors, !is.na(Risk_norm),
                   !is.na(Exposure), !is.na(Vulnerability)) |>
     dplyr::mutate(Sector_label = sector_name_map[Sector_ID])
 

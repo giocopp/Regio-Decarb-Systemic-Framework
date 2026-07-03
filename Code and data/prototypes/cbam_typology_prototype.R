@@ -1,6 +1,6 @@
 # cbam_typology_prototype.R — net-CBAM typology (cost vs protection side).
 #
-# The headline CBAM leg (R/exposure_cost.R::compute_cbam_leg) models CBAM as a
+# The headline CBAM leg (R/exposure.R::compute_cbam_leg) models CBAM as a
 # COST on importers of covered goods. CBAM also PROTECTS EU producers of those
 # goods by pricing imports at the EU carbon cost (carbon-leakage protection).
 # This prototype classifies each EU country x covered good by whether CBAM, on
