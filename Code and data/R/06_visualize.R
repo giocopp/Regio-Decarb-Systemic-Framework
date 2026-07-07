@@ -167,14 +167,14 @@ plot_tri_maps <- function(risk_data, output_dir,
     saved <- c(saved, outfile)
   }
 
-  # ── Figure 4: 5 vulnerability dimension panels ─────────────────
+  # ── Figure 4: vulnerability dimension panels (4 dims since 2026-07-03) ──
   vuln_dims <- c(
-    Energy          = "Vuln_Energy",
-    Labour          = "Vuln_Labour",
-    Technology      = "Vuln_Technology",
-    Institutions    = "Vuln_Institutions",
-    Diversification = "Vuln_Diversification"
+    Energy       = "Vuln_Energy",
+    Labour       = "Vuln_Labour",
+    Technology   = "Vuln_Technology",
+    Institutions = "Vuln_Institutions"
   )
+  vuln_dims <- vuln_dims[vuln_dims %in% names(mapping_sf)]
 
   pal_dim <- RColorBrewer::brewer.pal(6, "Blues")
 
@@ -279,14 +279,12 @@ plot_radar_charts <- function(risk_data, output_dir,
   radar_vars <- c(
     "Exposure",
     "Vuln_Energy", "Vuln_Labour",
-    "Vuln_Technology", "Vuln_Institutions",
-    "Vuln_Diversification"
+    "Vuln_Technology", "Vuln_Institutions"
   )
   radar_labels <- c(
     "Exposure",
     "Energy", "Labour",
-    "Technology", "Institutions",
-    "Diversification"
+    "Technology", "Institutions"
   )
 
   region_cols <- rep(c("firebrick", "darkolivegreen4"), length(countries))

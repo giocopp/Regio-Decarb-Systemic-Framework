@@ -8,14 +8,13 @@
 
 # ── Constants ────────────────────────────────────────────────────────────────
 VULN_DIMS <- c("Vuln_Energy", "Vuln_Labour", "Vuln_Technology",
-               "Vuln_Institutions", "Vuln_Diversification")
+               "Vuln_Institutions")
 
 VULN_PRETTY <- c(
-  Vuln_Energy          = "Energy",
-  Vuln_Labour          = "Labour",
-  Vuln_Technology      = "Technology",
-  Vuln_Institutions    = "Institutions",
-  Vuln_Diversification = "Diversification"
+  Vuln_Energy       = "Energy",
+  Vuln_Labour       = "Labour",
+  Vuln_Technology   = "Technology",
+  Vuln_Institutions = "Institutions"
 )
 
 

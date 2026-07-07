@@ -29,16 +29,21 @@
   "C26","C26-C27","C27","C26-C27",
   "C31_32","C31-C33","C33","C31-C33")
 
-# Headline-TRI vulnerability dimensions (5). Supply_Chain (Import_ExtraEU) is
-# intentionally absent: imports already enter the CBAM leg of Exposure.
+# Headline-TRI vulnerability dimensions (4). Supply_Chain (Import_ExtraEU) is
+# intentionally absent (imports already enter the CBAM component of Exposure).
+# Diversification (= Sector_Concentration alone) was dropped 2026-07-03
+# (decision with supervisor): under POOLED normalisation the indicator encodes
+# which sectors are large everywhere (food ~0.27, machinery ~0.29 vs chemicals
+# ~0.07 sector means), i.e. sector size, not regional specialisation — and it
+# was a single-indicator pillar. Sector_Concentration remains computed and
+# stays a dimension of the legacy within-sector baseline (05_aggregate.R).
 .vuln_dims <- function() list(
-  Energy          = c("Energy_Consumption", "Fossil_Share",
-                      "Renewables_Share", "RE_Potential"),
-  Labour          = c("Unemployment_Rate", "Labour_Market_Slack",
-                      "Highly_Skilled_Workers"),
-  Technology      = c("BERD", "Regional_Innovation"),
-  Institutions    = c("QoG_Index", "Climate_Mitigation_Laws"),
-  Diversification = c("Sector_Concentration")
+  Energy       = c("Energy_Consumption", "Fossil_Share",
+                   "Renewables_Share", "RE_Potential"),
+  Labour       = c("Unemployment_Rate", "Labour_Market_Slack",
+                   "Highly_Skilled_Workers"),
+  Technology   = c("BERD", "Regional_Innovation"),
+  Institutions = c("QoG_Index", "Climate_Mitigation_Laws")
 )
 
 
@@ -279,8 +284,9 @@ assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax") {
 
 # ── Pooled Vulnerability (5 dimensions) ──────────────────────────────────────
 
-#' Pooled 5-dimension Vulnerability for the headline TRI ("rank" ranks
+#' Pooled 4-dimension Vulnerability for the headline TRI ("rank" ranks
 #' the top level; otherwise min-max — log applies to the raw exposure only).
+#' Each dimension is re-normalised to [0,1] before the final average.
 build_vulnerability_pooled <- function(data_reshaped, empl_weights,
                                        norm = "log") {
   dims <- .vuln_dims()
@@ -292,6 +298,16 @@ build_vulnerability_pooled <- function(data_reshaped, empl_weights,
     for (vv in vars) vw <- impute_with_median(vw, vv)
     vw[[paste0("Vuln_", nm)]] <-
       rowMeans(dplyr::select(vw, dplyr::all_of(vars)), na.rm = TRUE)
+  }
+  # Re-normalise each dimension before averaging — the pooled analogue of the
+  # legacy per-dimension re-normalisation (§9). Without this step dimensions
+  # entered the mean with raw variances and effective influence was very
+  # unequal (2026-07-03 audit: correlation with the composite 0.81 for
+  # Technology vs 0.11 for Energy). preserve_zeros = FALSE: bounded scores.
+  for (nm in names(dims)) {
+    col <- paste0("Vuln_", nm)
+    if (col %in% names(vw))
+      vw[[col]] <- range01(vw[[col]], preserve_zeros = FALSE)
   }
   vtop <- if (identical(norm, "rank")) prank
           else function(x) range01(x, preserve_zeros = FALSE)

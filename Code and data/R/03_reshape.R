@@ -102,7 +102,12 @@ reshape_to_grid <- function(all_data_long, agg_rules) {
       )
     }
 
-    new_rows
+    # Drop all-NA aggregates before the caller upserts: an input that already
+    # arrives on the recombined code (e.g. ENSPRESO RE_Potential carries HR04
+    # directly) must not be clobbered by an NA aggregate built from absent
+    # source regions. Truly missing cells still end up NA via grid completion,
+    # so the "all-NA groups stay NA, not 0" rule (METHODOLOGY §15) is intact.
+    new_rows |> filter(!is.na(Value))
   }
 
   # ── Croatia: HR02 + HR05 + HR06 -> HR04 ──

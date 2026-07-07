@@ -152,6 +152,16 @@ list(
     format = "file"
   ),
 
+  # TECH-RIS.xlsx is regenerated OUTSIDE the pipeline by
+  # prototypes/build_tech_ris.R (official RIS 2025 database). Track it as a
+  # file target so content changes invalidate the harmonize chain — before
+  # 2026-07-03 it was untracked and edits silently never propagated.
+  tar_target(
+    ris_file,
+    "Initial data/Non sector data/TECH-RIS.xlsx",
+    format = "file"
+  ),
+
   tar_target(
     climate_laws,
     create_climate_laws(path$qog_ei, path$base_data)
@@ -310,7 +320,7 @@ list(
   tar_target(
     non_sector_data,
     {
-      force(qog_file)
+      force(qog_file); force(ris_file)
       force(climate_laws_file); force(re_potential_file)
       force(cohesion_fund_file)
       force(gfcf_file); force(unemployment_file)

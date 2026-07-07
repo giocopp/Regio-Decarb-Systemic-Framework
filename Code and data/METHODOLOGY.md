@@ -12,7 +12,7 @@ Indexed over $r$ ∈ EU-27 NUTS-2 regions, $s$ ∈ 12 manufacturing sectors (NAC
 
 The pipeline produces **two TRI variants**:
 
-1. **Headline — covered-carbon TRI** (`risk_data` target, §10.1): Exposure is the **covered carbon volume a region-sector carries** — its EUTL plant-level ETS verified emissions plus the embodied carbon in its extra-EU imports of CBAM-covered goods (both in tonnes CO2) — normalised **pooled across all region × sector cells** (so a cell's score reflects its carbon volume relative to all manufacturing, not rescaled within its own sector; §10.1). Vulnerability is the pooled 5-dimension adaptive-capacity composite (§9.1). No carbon price enters: a single EU-wide EUA price is a common scalar that cancels under normalisation, so it never moved the ranking — the priced formulation and its 2024→2034 phase-in trajectory were removed (§10.1).
+1. **Headline — covered-carbon TRI** (`risk_data` target, §10.1): Exposure is the **covered carbon volume a region-sector carries** — its EUTL plant-level ETS verified emissions plus the embodied carbon in its extra-EU imports of CBAM-covered goods (both in tonnes CO2) — normalised **pooled across all region × sector cells** (so a cell's score reflects its carbon volume relative to all manufacturing, not rescaled within its own sector; §10.1). Vulnerability is the pooled 4-dimension adaptive-capacity composite (§9.1). No carbon price enters: a single EU-wide EUA price is a common scalar that cancels under normalisation, so it never moved the ranking — the priced formulation and its 2024→2034 phase-in trajectory were removed (§10.1).
 2. **Raw-emissions baseline TRI** (`risk_data_raw_emissions` target, §10.2): the index as submitted to Climate Policy in Oct-2025 (Scope 1/2/3 emissions exposure, within-sector normalisation, 6 vulnerability dimensions). Retained for comparison only; the sensitivity workbook reports the Spearman between the two.
 
 Both variants build Exposure and Vulnerability from harmonised regional indicators normalised to $[0.01, 0.99]$ at the indicator level.
@@ -74,13 +74,13 @@ All indicators are downloaded automatically by `R/01_create_data.R` from Eurosta
 | Fossil_Share, Renewables_Share | `nrg_bal_c` ratios: siec=FE / siec=TOTAL and siec=RA000 / siec=TOTAL | National replicated to NUTS-2 | `create_energy_shares` |
 | Capital_Stock_Based_Prod | `nama_10_cp_a21` (NCS_HW, N11N, I20 — index 2020=100) | National replicated to NUTS-2 | `create_capital_stock_prod` |
 | Import_ExtraEU, Export_ExtraEU | `ext_tec01` (partner=EXT_EU, sizeclas=TOTAL, THS_EUR) | National → NUTS-2 by empl share | `create_trade_extra_eu` |
-| BERD (regional R&D intensity) | `rd_e_gerdreg` (business-sector R&D, % of regional GDP) | NUTS-2 (region-level, replicated across sectors) | `create_regional_berd` |
+| BERD (regional R&D intensity) | `rd_e_gerdreg` (business-sector R&D, % of regional GDP) | NUTS-2 (region-level, replicated across sectors); gap fallback chain (2026-07-03): latest non-NA year per region (PT16-18, PL43, PL62) → NUTS-1 replicated (all BE) → national replicated (all NL) — legitimate for an intensity, mirrors the QoG NUTS-1 rule | `create_regional_berd` |
 | QoG_Index | EQI **2024 wave**, standalone regional release `qog_eqi_long_24.csv` (Charron et al., University of Gothenburg) | NUTS-2 direct where surveyed at NUTS-2 (NUTS-2021 codes); BE and DE are surveyed at NUTS-1 → replicated to their NUTS-2 regions; single-NUTS-2 states (CY, EE, LU, LV, MT) carry the national score | `create_qog` |
 | Climate_Mitigation_Laws | QoG Environmental Indicators (`ccl_nmitlp`, latest year per country) | National replicated to NUTS-2 | `create_climate_laws` |
 | Sector_Concentration | Derived from `sbs_r_nuts2021` (share of the focal NACE sub-sector in the region's manufacturing employment) | NUTS-2 × Sector | `create_sector_concentration` |
-| RE_Potential | JRC ENSPRESO (wind onshore + solar + biomass, medium scenario, TWh) | NUTS-2 | `create_re_potential` |
+| RE_Potential | JRC ENSPRESO (wind onshore + solar + biomass, medium scenario, TWh); ENSPRESO's pre-2016 NUTS codes are mapped to NUTS-2021 (2026-07-03): 26 geometrically verified 1:1 renames (all FR, five PL) + polygon-area-share splits for PL12→PL91/92, HU10→HU11/12, LT00→LT01/02, IE01+IE02→IE04/05/06 — before the fix these regions were silently country-median-imputed | NUTS-2 | `create_re_potential` |
 | Cohesion_Fund | EU Cohesion Open Data API (ERDF+CF+ESF 2014-2020 MFF, regionalised) ÷ NUTS-2 population from `demo_r_d2jan` (2020) | NUTS-2 | `create_cohesion_fund` |
-| Regional_Innovation | EC Regional Innovation Scoreboard (manual download — the only non-scripted input) | NUTS-2 | manual xlsx |
+| Regional_Innovation | EC Regional Innovation Scoreboard — RIS 2025 edition database, Regional Innovation Index (RII) for year 2024, "relative to EU 2018"; `TECH-RIS.xlsx` is regenerated from the official URL by `prototypes/build_tech_ris.R` (2026-07-03 — the former manual RIS-2023 extract left the five single-region countries empty) | NUTS-2 (countries published at NUTS-1 are replicated to their NUTS-2; native NL/PT/HR codes recombined in reshape) | `prototypes/build_tech_ris.R` |
 | Policy_Pressure | Hard-coded ETS + CBAM coverage scores per NACE sector. **Computed for reference only — in NO composite** (a per-sector constant cancels exactly under within-sector normalisation, §10.2; ETS/CBAM coverage enters the headline TRI as covered carbon volume, §10.1) | Constant per sector | `create_policy_pressure` |
 
 Covered-carbon Exposure inputs (headline TRI, §10.1):
@@ -158,7 +158,7 @@ All other indicators (Renewables_Share, RE_Potential, GFCF, BERD, Regional_Innov
 
 ## 9. Vulnerability dimensions
 
-Vulnerability is built from six dimensions, each a row-mean of its constituent normalised indicators. Defined in `R/05_aggregate.R::dimensions`:
+The **legacy baseline** builds Vulnerability from six dimensions, each a row-mean of its constituent normalised indicators (the headline TRI uses four of them — §9.1). Defined in `R/05_aggregate.R::dimensions`:
 
 | Dimension | Indicators | Notes |
 |---|---|---|
@@ -177,11 +177,12 @@ NAs are imputed cell-by-cell at the indicator stage from the country × sector m
 
 ### 9.1 Vulnerability for the headline TRI (`vulnerability_pooled`)
 
-The headline TRI uses a **pooled, 5-dimension** variant (`build_vulnerability_pooled()` in `R/exposure.R`):
+The headline TRI uses a **pooled, 4-dimension** variant (`build_vulnerability_pooled()` in `R/exposure.R`): **Energy, Labour, Technology, Institutions**.
 
 - Indicators are normalised **pooled across sectors** (`pool = TRUE` in `normalize_indicators()`), so Vulnerability lives on the same cross-sector scale as the pooled Exposure (the two enter $\sqrt{E}\cdot\sqrt{V}$ symmetrically).
-- **Supply_Chain (= Import_ExtraEU) is dropped → 5 dimensions** (Energy, Labour, Technology, Institutions, Diversification). Extra-EU imports are already priced in the CBAM component of Exposure; keeping them in Vulnerability would count imports on both sides of the geometric mean.
-- Same NA imputation; dimension scores are row-means of the pooled indicator values; Vulnerability is the dimension row-mean normalised at the top level with the scheme matching `tri_norm_mode` ("rank" → percentile rank, otherwise min-max — the log step applies only to the skewed raw exposure volume, not to a bounded mean).
+- **Supply_Chain (= Import_ExtraEU) is dropped.** Extra-EU imports are already priced in the CBAM component of Exposure; keeping them in Vulnerability would count imports on both sides of the geometric mean.
+- **Diversification (= Sector_Concentration) is dropped (2026-07-03, decision with the supervisor).** Under pooled normalisation the indicator encodes which sectors are large everywhere (sector means: food 0.27, fabricated metals & machinery 0.29, vs chemicals 0.07) — sector composition, not regional specialisation — and it was a single-indicator pillar. Sector_Concentration remains computed and stays a dimension of the legacy baseline (§9), where the within-sector normalisation removes the sector-size component.
+- Same NA imputation; dimension scores are row-means of the pooled indicator values, and **each dimension is re-normalised to [0,1] before the final average** — the pooled analogue of §9's per-dimension re-normalisation. Without this step the dimensions entered the mean with their raw variances and effective influence was very unequal (2026-07-03 audit: correlation with the composite 0.81 for Technology vs 0.11 for Energy). Vulnerability is then the dimension row-mean normalised at the top level with the scheme matching `tri_norm_mode` ("rank" → percentile rank, otherwise min-max — the log step applies only to the skewed raw exposure volume, not to a bounded mean).
 
 ## 10. Exposure
 
@@ -309,11 +310,11 @@ Mixed vintages are inherent to a multi-source composite; the headline carbon com
 Documented data quirks:
 
 - **HR04 (Continentalna Hrvatska)** is rebuilt from HR02+HR05+HR06, except `Unemployment_Rate` and `Capital_Stock_Based_Prod`, which are **copied from HR03** (donor copy in `reshape_to_grid()`): both are intensive indicators with national-level sources in Croatia, so the HR03 value equals the national value that HR04 would receive.
-- All-NA recombination groups stay NA (not 0) for both the Croatia and Portugal aggregations, and `harmonize_sector()` preserves NA when a collapse group is entirely missing (false zeros would otherwise trip the Scope-1 true-zero rule into spurious "Zero Risk" cells).
+- All-NA recombination groups stay NA (not 0) for both the Croatia and Portugal aggregations, and `harmonize_sector()` preserves NA when a collapse group is entirely missing (false zeros would otherwise trip the Scope-1 true-zero rule into spurious "Zero Risk" cells). Since 2026-07-03 an all-NA aggregate also no longer **overwrites** a value that already arrives on the recombined code — ENSPRESO delivers HR04 directly, and the upsert used to clobber it with NA.
 
 ## 16. Reproducibility
 
-- All Eurostat downloads are scripted (no manual files for any Eurostat indicator). The only manual input is `TECH-RIS.xlsx` (EC Regional Innovation Scoreboard — no public API).
+- All Eurostat downloads are scripted (no manual files for any Eurostat indicator). `TECH-RIS.xlsx` is also scripted since 2026-07-03 (`prototypes/build_tech_ris.R` downloads the official RIS 2025 database); no manual-only input remains.
 - The pipeline picks the latest year with full coverage at every run, so `tar_make()` on a future date produces an updated index automatically. The exact year per indicator is logged in `Final data/Coverage_Report.xlsx`.
 - Committed xlsx files in `Initial data/` and `Final data/` and PNGs in `Figures/` are the published snapshot. `git checkout <submission-tag>` reproduces the exact paper figures and numbers without re-running R.
 - `tar_destroy(); tar_make()` refreshes the entire pipeline against the current Eurostat vintage.

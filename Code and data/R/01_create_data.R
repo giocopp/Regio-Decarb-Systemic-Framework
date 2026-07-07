@@ -801,16 +801,62 @@ create_re_potential <- function(enspreso_path) {
     ) |>
     dplyr::filter(Country_ID %in% eu27)
 
-  ensp_clean |>
+  # ENSPRESO carries pre-2016 NUTS-2 codes. Without a crosswalk, all of
+  # France, six Polish regions, HU1x, Ireland and Lithuania fail the join and
+  # were silently country-median-imputed (bug found 2026-07-03). Two steps:
+  # (1) 1:1 renames, verified geometrically against gisco NUTS-2013 vs
+  # NUTS-2021 polygons (>=97% area overlap for every pair);
+  # (2) area-share splits for the reorganised regions, with shares computed
+  # at run time from gisco NUTS-2021 polygon areas (EPSG:3035) — a disclosed
+  # approximation for an extensive land-based potential (TWh).
+  # HR04 needs no mapping: ENSPRESO's (pre-split) HR04 equals the recombined
+  # HR04 of the 230-region grid and now survives reshape (03_reshape.R).
+  renames <- c(FR21 = "FRF2", FR22 = "FRE2", FR23 = "FRD2", FR24 = "FRB0",
+               FR25 = "FRD1", FR26 = "FRC1", FR30 = "FRE1", FR41 = "FRF3",
+               FR42 = "FRF1", FR43 = "FRC2", FR51 = "FRG0", FR52 = "FRH0",
+               FR53 = "FRI3", FR61 = "FRI1", FR62 = "FRJ2", FR63 = "FRI2",
+               FR71 = "FRK2", FR72 = "FRK1", FR81 = "FRJ1", FR82 = "FRL0",
+               FR83 = "FRM0",
+               PL11 = "PL71", PL31 = "PL81", PL32 = "PL82", PL33 = "PL72",
+               PL34 = "PL84")
+  splits <- list(list(old = "PL12",            new = c("PL91", "PL92")),
+                 list(old = "HU10",            new = c("HU11", "HU12")),
+                 list(old = "LT00",            new = c("LT01", "LT02")),
+                 list(old = c("IE01", "IE02"), new = c("IE04", "IE05", "IE06")))
+
+  v <- ensp_clean |>
+    dplyr::mutate(NUTS_ID = dplyr::coalesce(renames[nuts2_code], nuts2_code)) |>
+    dplyr::group_by(Country_ID, NUTS_ID) |>
+    dplyr::summarise(RE_Total_TWh = sum(RE_Total_TWh, na.rm = TRUE),
+                     .groups = "drop")
+
+  n21 <- giscoR::gisco_get_nuts(nuts_level = "2", year = "2021",
+                                resolution = "10") |>
+    sf::st_transform(3035)
+  areas <- tibble::tibble(NUTS_ID = n21$NUTS_ID,
+                          area    = as.numeric(sf::st_area(n21)))
+  split_rows <- purrr::map_dfr(splits, function(s) {
+    tot <- sum(v$RE_Total_TWh[v$NUTS_ID %in% s$old], na.rm = TRUE)
+    areas |>
+      dplyr::filter(NUTS_ID %in% s$new) |>
+      dplyr::transmute(Country_ID   = substr(NUTS_ID, 1, 2),
+                       NUTS_ID,
+                       RE_Total_TWh = tot * area / sum(area))
+  })
+  v <- v |>
+    dplyr::filter(!NUTS_ID %in% unlist(lapply(splits, `[[`, "old"))) |>
+    dplyr::bind_rows(split_rows)
+
+  v |>
     dplyr::transmute(
       Country_CD   = Country_ID,
       Country_Name = NA_character_,
-      NUTS_ID      = nuts2_code,
+      NUTS_ID      = NUTS_ID,
       NUTS_Name    = NA_character_,
       Sector_CD    = NA_character_,
       Sector_ID    = NA_character_,
       Component    = "Vulnerability",
-      Dimension    = "Diversification",
+      Dimension    = "Energy",
       Variable     = "RE_Potential",
       Unit         = "TWh (technical potential, medium scenario)",
       Value        = round(RE_Total_TWh, 4),
@@ -1543,6 +1589,45 @@ create_regional_berd <- function(empl_weights) {
     dplyr::filter(.year == pick$year) |>
     dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
 
+  # Fallback chain for regions absent in the picked year (found 2026-07-03:
+  # PT16-18/PL43/PL62 publish only earlier years; Belgium publishes BES PC_GDP
+  # at NUTS-1 only; the Netherlands only nationally). BERD is an intensity
+  # (% of GDP), so replicating a coarser geography is the same §5 rule used
+  # for other intensive indicators (and mirrors the QoG NUTS-1 handling).
+  #   (i)  per-cell latest non-NA year within the window (§4 fallback);
+  #   (ii) NUTS-1 parent value, replicated;
+  #   (iii) national value, replicated.
+  expected <- sort(unique(empl_weights$NUTS_ID))
+  latest_of <- function(df) df |>
+    dplyr::filter(!is.na(values)) |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::group_by(geo) |>
+    dplyr::slice_max(.year, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup()
+
+  miss1 <- setdiff(expected, rd_region$NUTS_ID[!is.na(rd_region$rd_pc_gdp)])
+  fb_cell <- latest_of(reg |> dplyr::filter(geo %in% miss1)) |>
+    dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
+
+  miss2 <- setdiff(miss1, fb_cell$NUTS_ID)
+  n1 <- latest_of(raw |> dplyr::filter(nchar(geo) == 3,
+                                       substr(geo, 1, 2) %in% eu27)) |>
+    dplyr::transmute(n1 = geo, rd_pc_gdp = values)
+  fb_n1 <- tibble::tibble(NUTS_ID = miss2, n1 = substr(miss2, 1, 3)) |>
+    dplyr::inner_join(n1, by = "n1") |>
+    dplyr::select(NUTS_ID, rd_pc_gdp)
+
+  miss3 <- setdiff(miss2, fb_n1$NUTS_ID)
+  n0 <- latest_of(raw |> dplyr::filter(nchar(geo) == 2, geo %in% eu27)) |>
+    dplyr::transmute(n0 = geo, rd_pc_gdp = values)
+  fb_n0 <- tibble::tibble(NUTS_ID = miss3, n0 = substr(miss3, 1, 2)) |>
+    dplyr::inner_join(n0, by = "n0") |>
+    dplyr::select(NUTS_ID, rd_pc_gdp)
+
+  rd_region <- rd_region |>
+    dplyr::filter(!is.na(rd_pc_gdp)) |>
+    dplyr::bind_rows(fb_cell, fb_n1, fb_n0)
+
   # Replicate the region-level value across the (Country x NUTS x Sector) grid.
   result <- empl_weights |>
     dplyr::distinct(Country_ID, NUTS_ID, Sector_ID) |>
@@ -1557,6 +1642,8 @@ create_regional_berd <- function(empl_weights) {
 
   attr(result, "year_selected")  <- pick$year
   attr(result, "source_dataset") <- "rd_e_gerdreg (sectperf=BES, PC_GDP)"
+  attr(result, "fallbacks") <- list(cell_year = fb_cell$NUTS_ID,
+                                    nuts1 = fb_n1$NUTS_ID, nuts0 = fb_n0$NUTS_ID)
   result
 }
 
