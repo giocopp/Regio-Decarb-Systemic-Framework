@@ -22,28 +22,53 @@
 }
 
 #' Build a single choropleth map panel
-.single_map <- function(df, europe_bg, eu_outline, var, title, colours) {
-  ggplot2::ggplot() +
+.single_map <- function(df, europe_bg, eu_outline, var, title, colours,
+                        bins = FALSE) {
+  # bins = TRUE draws QUINTILE CLASSES of the positive values instead of the
+  # linear 0-1 gradient (2026-07-09): the per-job Exposure intensity is
+  # genuinely right-skewed (a handful of single-plant regions set the linear
+  # scale, median C-level Exposure 0.06), so the linear fill renders almost
+  # every region near-white. Quintile classes match the Risk_Band logic and
+  # change ONLY the map colouring - the index values are untouched.
+  base <- ggplot2::ggplot() +
     ggplot2::geom_sf(data = europe_bg,
-                     fill = "grey90", colour = "grey80", linewidth = 0.15) +
-    ggplot2::geom_sf(data = df,
-                     ggplot2::aes(fill = .data[[var]]),
-                     colour = "grey35", linewidth = 0.05) +
+                     fill = "grey90", colour = "grey80", linewidth = 0.15)
+  if (bins) {
+    x <- df[[var]]
+    pos <- x[!is.na(x) & x > 0]
+    qs <- unique(stats::quantile(pos, probs = seq(0, 1, 0.2), na.rm = TRUE))
+    df$.cls <- cut(x, breaks = c(-Inf, qs[-1]),
+                   labels = c("Q1 (lowest)", "Q2", "Q3", "Q4",
+                              "Q5 (highest)")[seq_len(length(qs) - 1)])
+    pal <- colours[round(seq(2, length(colours), length.out = nlevels(df$.cls)))]
+    base <- base +
+      ggplot2::geom_sf(data = df, ggplot2::aes(fill = .cls),
+                       colour = "grey35", linewidth = 0.05) +
+      ggplot2::scale_fill_manual(name = paste0(title, "\n(quintiles)"),
+                                 values = pal, na.value = "grey85",
+                                 drop = FALSE)
+  } else {
+    base <- base +
+      ggplot2::geom_sf(data = df,
+                       ggplot2::aes(fill = .data[[var]]),
+                       colour = "grey35", linewidth = 0.05) +
+      ggplot2::scale_fill_gradientn(
+        name     = title,
+        limits   = c(0, 1),
+        colours  = colours,
+        breaks   = seq(0, 1, length.out = 5),
+        labels   = scales::percent_format(accuracy = 1),
+        na.value = "grey85",
+        guide    = ggplot2::guide_colorbar(
+          barwidth  = 0.3, barheight = 2.0,
+          title.theme = ggplot2::element_text(face = "bold", size = 8)
+        )
+      )
+  }
+  base +
     ggplot2::geom_sf(data = eu_outline,
                      fill = NA, colour = "grey15", linewidth = 0.25) +
     ggplot2::coord_sf(crs = .crs_lambert) +
-    ggplot2::scale_fill_gradientn(
-      name     = title,
-      limits   = c(0, 1),
-      colours  = colours,
-      breaks   = seq(0, 1, length.out = 5),
-      labels   = scales::percent_format(accuracy = 1),
-      na.value = "grey85",
-      guide    = ggplot2::guide_colorbar(
-        barwidth  = 0.3, barheight = 2.0,
-        title.theme = ggplot2::element_text(face = "bold", size = 8)
-      )
-    ) +
     ggplot2::theme_void(base_size = 9) +
     ggplot2::theme(
       legend.position = "right",
@@ -139,17 +164,17 @@ plot_tri_maps <- function(risk_data, output_dir,
       sf::st_transform(.crs_lambert)
 
     p_exp <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Exposure", "Exposure", pal_exp) +
+                         "Exposure", "Exposure", pal_exp, bins = TRUE) +
       ggplot2::ggtitle("Exposure") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
     p_vul <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Vulnerability", "Vulnerability", pal_vul) +
+                         "Vulnerability", "Vulnerability", pal_vul, bins = TRUE) +
       ggplot2::ggtitle("Vulnerability") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
     p_tri <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Risk_norm", "Risk", pal_risk) +
+                         "Risk_norm", "Risk", pal_risk, bins = TRUE) +
       ggplot2::ggtitle("Risk") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
@@ -163,7 +188,8 @@ plot_tri_maps <- function(risk_data, output_dir,
 
     outfile <- file.path(output_dir,
                          paste0("Figure_3_", name_map[[s]], ".png"))
-    ggplot2::ggsave(outfile, combined, width = 14, height = 5, dpi = 600)
+    ggplot2::ggsave(outfile, combined, width = 14, height = 5, dpi = 600,
+                    bg = "white")
     saved <- c(saved, outfile)
   }
 
@@ -188,7 +214,7 @@ plot_tri_maps <- function(risk_data, output_dir,
                   vuln_dims[[dim_lab]], dim_lab, pal_dim)
     })
 
-    panel <- patchwork::wrap_plots(dim_maps, ncol = 3) +
+    panel <- patchwork::wrap_plots(dim_maps, ncol = 2, nrow = 2) +
       patchwork::plot_annotation(
         title = paste("Vulnerability Dimensions \u2013", s),
         theme = ggplot2::theme(
@@ -198,7 +224,8 @@ plot_tri_maps <- function(risk_data, output_dir,
 
     outfile <- file.path(output_dir,
                          paste0("Figure_4_", name_map[[s]], ".png"))
-    ggplot2::ggsave(outfile, panel, width = 14, height = 8, dpi = 600)
+    ggplot2::ggsave(outfile, panel, width = 10, height = 9, dpi = 600,
+                    bg = "white")
     saved <- c(saved, outfile)
   }
 
@@ -345,13 +372,16 @@ plot_risk_maps <- function(risk_data, output_dir) {
                                                       face = "bold"))
   )
   p1 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Exposure",
-                    "Exposure", RColorBrewer::brewer.pal(7, "Purples")) +
+                    "Exposure", RColorBrewer::brewer.pal(7, "Purples"),
+                    bins = TRUE) +
     ttl("Exposure")
   p2 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Vulnerability",
-                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues")) +
+                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues"),
+                    bins = TRUE) +
     ttl("Vulnerability")
   p3 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Risk_norm",
-                    "Risk", RColorBrewer::brewer.pal(7, "Reds")) +
+                    "Risk", RColorBrewer::brewer.pal(7, "Reds"),
+                    bins = TRUE) +
     ttl("Risk")
 
   combo <- (p1 | p2 | p3) + patchwork::plot_annotation(
