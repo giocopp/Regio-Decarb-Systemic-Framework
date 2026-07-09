@@ -1,5 +1,5 @@
 # Maps for the headline Risk index. The choropleth is now a pipeline target
-# (figure_risk_maps); only the plant point map is prototype-only.
+# (figure_risk_maps); only the plant point map is run manually after tar_make().
 suppressMessages({library(dplyr); library(sf); library(ggplot2); library(patchwork)})
 source("R/06_visualize.R")
 OUT <- "Figures"; dir.create(OUT, showWarnings = FALSE)
@@ -54,4 +54,28 @@ ggsave(f2, pplant, width = 11, height = 7, dpi = 300, bg = "white"); cat("wrote"
 deck_copy <- "../Review/Hazard_Exposure_Slides/ets_installations_2023.png"
 if (dir.exists(dirname(deck_copy))) {
   file.copy(f2, deck_copy, overwrite = TRUE); cat("copied to", deck_copy, "\n")
+}
+
+# CBAM import-carbon choropleth (deck companion to the ETS plant map): the
+# CBAM component has no plant geography — national embodied-import carbon
+# downscaled to NUTS-2 by employment shares — so it is mapped as a regional
+# surface (Total Manufacturing row, Mt CO2).
+cb <- tri |> filter(Sector_ID == "C") |>
+  mutate(cbam_Mt = exposure_CBAM / 1e6)
+mB <- layers$nuts2 |> left_join(cb, by = "NUTS_ID") |> st_transform(.crs_lambert)
+pcbam <- ggplot() +
+  geom_sf(data = layers$europe_bg, fill = "grey92", colour = "grey80", linewidth = 0.15) +
+  geom_sf(data = mB, aes(fill = cbam_Mt), colour = "grey35", linewidth = 0.1) +
+  geom_sf(data = layers$eu_outline, fill = NA, colour = "grey15", linewidth = 0.25) +
+  coord_sf(crs = .crs_lambert) +
+  scale_fill_gradientn(colours = RColorBrewer::brewer.pal(7, "Oranges"),
+                       name = "Mt CO2 (2023)", na.value = "grey92") +
+  theme_void(base_size = 10) +
+  theme(legend.position = "right",
+        plot.background = element_rect(fill = "white", colour = NA))
+f3 <- file.path(OUT, "Figure_cbam_import_carbon.png")
+ggsave(f3, pcbam, width = 11, height = 7, dpi = 300, bg = "white"); cat("wrote", f3, "\n")
+deck_copy3 <- "../Review/Hazard_Exposure_Slides/cbam_import_carbon.png"
+if (dir.exists(dirname(deck_copy3))) {
+  file.copy(f3, deck_copy3, overwrite = TRUE); cat("copied to", deck_copy3, "\n")
 }

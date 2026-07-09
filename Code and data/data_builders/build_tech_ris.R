@@ -16,7 +16,7 @@
 #     PT19/PT1A-PT1D) are emitted as-is: R/03_reshape.R recombines them onto
 #     the 230-region grid (HR04, NL31/NL33, PT16-18).
 #
-# Run from "Code and data/":  Rscript prototypes/build_tech_ris.R
+# Run from "Code and data/":  Rscript data_builders/build_tech_ris.R
 
 suppressMessages({library(dplyr); library(readxl); library(writexl)})
 

@@ -32,11 +32,11 @@
 # design, so "lending does not track transition risk" would be true by
 # construction.
 #
-# Run from "Code and data/":  Rscript prototypes/eib_cohesion_check.R
+# Run from "Code and data/":  Rscript validation/eib_cohesion_check.R
 
 suppressMessages({library(dplyr); library(readr)})
 
-eib <- read_tsv("prototypes/eib_cohesion_data/eib_regional_signed_2021_2024.tsv",
+eib <- read_tsv("validation/eib_cohesion_data/eib_regional_signed_2021_2024.tsv",
                 show_col_types = FALSE)
 names(eib) <- c("NUTS_ID","signed_meur","name","type","pop","gdp",
                 "signed_pc","signed_gdp")

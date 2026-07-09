@@ -1015,7 +1015,9 @@ create_cohesion_fund <- function(base_data_path) {
 #' EU-27 NUTS-2 coverage: (Country_CD, NUTS_ID, Year, Value).
 .fetch_nuts2_latest <- function(id, filters, base_data_path,
                                 year_col = "time", value_col = "values",
-                                max_years_back = 5L) {
+                                max_years_back = 5L,
+                                agg = c("mean", "sum")) {
+  agg <- match.arg(agg)
 
   this_yr <- as.integer(format(Sys.Date(), "%Y"))
   raw <- restatapi::get_eurostat_data(
@@ -1026,8 +1028,29 @@ create_cohesion_fund <- function(base_data_path) {
   ) |>
     tibble::as_tibble() |>
     dplyr::mutate(geo = as.character(geo),
-                  values = as.numeric(values),
-                  country = substr(geo, 1, 2))
+                  values = as.numeric(values))
+
+  # Recode NUTS-2024 geographies onto the pipeline grid BEFORE the grid
+  # filter. Eurostat vintages from 2024 on arrive in NUTS-2024 codes
+  # (Utrecht NL31->NL35, Zuid-Holland NL33->NL36; Portugal PT16/17/18 split
+  # into PT19/PT1A-PT1D); the old `geo %in% base_d` filter silently dropped
+  # them, so those regions were written as missing and country-median-imputed
+  # downstream (bug found 2026-07-09). Merged codes are aggregated with the
+  # indicator's rule: mean for intensive (labour rates), sum for extensive
+  # (GFCF), mirroring `agg_rules`.
+  nuts24_to_grid <- c(NL35 = "NL31", NL36 = "NL33",
+                      PT19 = "PT16", PT1D = "PT16",
+                      PT1A = "PT17", PT1B = "PT17", PT1C = "PT18")
+  agg_fun <- if (agg == "sum") {
+    function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
+  } else {
+    function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+  }
+  raw <- raw |>
+    dplyr::mutate(geo = dplyr::coalesce(nuts24_to_grid[geo], geo)) |>
+    dplyr::group_by(geo, time) |>
+    dplyr::summarise(values = agg_fun(values), .groups = "drop") |>
+    dplyr::mutate(country = substr(geo, 1, 2))
 
   # NUTS-2 only, EU-27
   base_d <- readxl::read_xlsx(base_data_path) |>
@@ -1048,6 +1071,26 @@ create_cohesion_fund <- function(base_data_path) {
     dplyr::transmute(Country_CD = country, NUTS_ID = geo,
                      Year = pick$year, Value = values)
 
+  # Per-cell fallback (METHODOLOGY §4): a region missing/NA in the picked
+  # year keeps its most recent earlier non-NA value within the window
+  # (e.g. DEB2 unemployment, PL43). Previously implemented only in
+  # create_employment_weights — closed here 2026-07-09.
+  filled <- out |> dplyr::filter(!is.na(Value)) |> dplyr::pull(NUTS_ID)
+  gaps <- setdiff(intersect(base_d, unique(df$geo)), filled)
+  if (length(gaps) > 0) {
+    fb <- df |>
+      dplyr::filter(geo %in% gaps, !is.na(values)) |>
+      dplyr::mutate(.year = as.integer(as.character(time))) |>
+      dplyr::group_by(geo) |>
+      dplyr::slice_max(.year, n = 1, with_ties = FALSE) |>
+      dplyr::ungroup() |>
+      dplyr::transmute(Country_CD = country, NUTS_ID = geo,
+                       Year = .year, Value = values)
+    out <- out |> dplyr::filter(!NUTS_ID %in% fb$NUTS_ID) |>
+      dplyr::bind_rows(fb)
+    attr(out, "cell_year_fallback") <- fb$NUTS_ID
+  }
+
   attr(out, "year_selected") <- pick$year
   attr(out, "year_coverage") <- pick$coverage
   attr(out, "missing_geos")  <- pick$missing_geos
@@ -1063,7 +1106,8 @@ create_gfcf <- function(base_data_path) {
   out <- .fetch_nuts2_latest(
     id      = "nama_10r_2gfcf",
     filters = list(nace_r2 = "C", sector = "S1", currency = "MIO_EUR"),
-    base_data_path = base_data_path
+    base_data_path = base_data_path,
+    agg     = "sum"   # extensive (MIO_EUR): merged PT codes are summed
   )
 
   result <- out |>

@@ -251,31 +251,86 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
          stop("unknown norm: ", norm))
 }
 
-#' Assemble pooled Exposure = normalised covered carbon volume.
+#' Assemble pooled Exposure from the covered carbon of a cell.
 #'
 #' Exposure_raw is the cell's covered carbon volume in tonnes CO2: EUTL verified
 #' ETS emissions + embodied carbon in extra-EU imports of CBAM-covered goods. No
 #' carbon price is applied (a single EU-wide EUA price is a common scalar that
 #' cancels under normalisation — see file header).
 #'
+#' `denom` sets the quantity that is normalised (2026-07-09, revised same
+#' day after verification):
+#'   - "per_employee" (headline): Exposure_raw / the REGION's total
+#'     manufacturing employment — covered carbon per regional manufacturing
+#'     job (tCO2 per job of the regional industrial base). The denominator
+#'     is deliberately NOT the cell's own sector employment: NUTS-2 sector
+#'     employment fails in four verified ways, all of which shrink the
+#'     denominator exactly at plant regions —
+#'       (1) HQ attribution: EL65 reports 43 refining employees against the
+#'           2 Mt Corinth refinery while 80% of Greek C19 employment sits
+#'           in Attiki;
+#'       (2) confidentiality suppression as MISSING ROWS (IJmuiden's NL32
+#'           C24 and Repsol Cartagena's ES62 C19 simply absent), so sums
+#'           silently treat them as zero;
+#'       (3) the SBS "persons employed" definition EXCLUDES manpower
+#'           supplied by other enterprises (Eurostat SBS glossary) — plant
+#'           contractors are booked under NACE 78.2, not the plant sector;
+#'       (4) reporting volatility at constant plants (PT11 C19: 462 -> 55
+#'           in one year; EL52 184 -> 875; ITG2 496 -> 1,698).
+#'     Regional manufacturing TOTALS have none of these pathologies.
+#'     Consequence: within a region all cells share the denominator, so the
+#'     cross-sector pattern inside a region follows the tonnes; across
+#'     regions the intensity measures the burden on the regional industrial
+#'     employment base.
+#'   - "volume": raw tonnes (no division), kept as the named alternative in
+#'     the sensitivity workbook.
+#'
 #' @param df tibble with NUTS_ID, Country_ID, Sector_ID, ets_emis_t
-#'   (EUTL verified emissions, tonnes) and CBAM_emb_tCO2 (tonnes)
+#'   (EUTL verified emissions, tonnes), CBAM_emb_tCO2 (tonnes) and — for
+#'   denom = "per_employee" — pers_employed
 #' @param norm "minmax" (the wired headline, tri_norm_mode), "log", or "rank"
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
-#' @return df plus Exposure_raw (covered tCO2) and Exposure
-assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax") {
-  norm <- match.arg(norm, c("log", "minmax", "rank"))
+#' @param denom "per_employee" (headline; regional mfg employment) or "volume"
+#' @return df plus Exposure_raw (covered tCO2), empl_int + exposure_per_empl
+#'   (per_employee only; empl_int = the regional denominator) and Exposure
+assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax",
+                              denom = c("per_employee", "volume")) {
+  norm  <- match.arg(norm, c("log", "minmax", "rank"))
+  denom <- match.arg(denom)
   d <- df |>
     dplyr::mutate(Exposure_raw = ets_emis_t + CBAM_emb_tCO2)
+
+  if (denom == "per_employee") {
+    if (!"pers_employed" %in% names(d))
+      stop("assemble_exposure(denom = 'per_employee') needs pers_employed")
+    d <- d |>
+      dplyr::group_by(NUTS_ID) |>
+      dplyr::mutate(empl_int = sum(pers_employed, na.rm = TRUE)) |>
+      dplyr::ungroup() |>
+      dplyr::mutate(
+        exposure_per_empl = dplyr::if_else(empl_int > 0,
+                                           Exposure_raw / empl_int,
+                                           NA_real_))
+    n_orphan <- sum(d$Exposure_raw > 0 &
+                      (is.na(d$empl_int) | d$empl_int <= 0), na.rm = TRUE)
+    if (n_orphan > 0)
+      warning(n_orphan, " cells carry covered carbon in regions with no",
+              " reported manufacturing employment - their Exposure is NA")
+    base_col <- "exposure_per_empl"
+  } else {
+    base_col <- "Exposure_raw"
+  }
+
   if (within_sector) {
     d <- d |>
       dplyr::group_by(Sector_ID) |>
-      dplyr::mutate(Exposure = .norm_exposure(Exposure_raw, norm)) |>
+      dplyr::mutate(Exposure = .norm_exposure(.data[[base_col]], norm)) |>
       dplyr::ungroup()
   } else {
-    d <- d |> dplyr::mutate(Exposure = .norm_exposure(Exposure_raw, norm))
+    d <- d |> dplyr::mutate(Exposure = .norm_exposure(.data[[base_col]], norm))
   }
-  # true-zero cells stay at 0 under every norm (rank would price them)
+  # true-zero cells stay at 0 under every norm and denominator (a cell with
+  # zero covered carbon is Zero Risk regardless of its employment)
   d |>
     dplyr::mutate(Exposure = dplyr::if_else(Exposure_raw == 0, 0, Exposure)) |>
     tibble::as_tibble()
@@ -344,9 +399,10 @@ assemble_risk_panel <- function(vuln, ets_geo, cbam_leg) {
 #' Covered-carbon Risk index for the 11 sub-sectors.
 #' Risk_norm = range01(sqrt(E) * sqrt(V)), pooled; zero-volume cells get
 #' Exposure 0 -> Risk NA -> "Zero Risk" band downstream.
-build_risk_tri <- function(vuln, ets_geo, cbam_leg, norm = "minmax") {
+build_risk_tri <- function(vuln, ets_geo, cbam_leg, norm = "minmax",
+                           denom = "per_employee") {
   assemble_risk_panel(vuln, ets_geo, cbam_leg) |>
-    assemble_exposure(norm = norm) |>
+    assemble_exposure(norm = norm, denom = denom) |>
     dplyr::mutate(
       E         = dplyr::if_else(Exposure == 0, NA_real_, Exposure),
       Risk_norm = range01(sqrt(E) * sqrt(Vulnerability))
@@ -358,17 +414,31 @@ build_risk_tri <- function(vuln, ets_geo, cbam_leg, norm = "minmax") {
 #' normalised across regions; Vulnerability = regional mean of sub-sector
 #' scores, re-normalised; Vuln_* dimensions = regional means (kept on the
 #' bounded [0.01, 0.99] indicator scale).
-rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax") {
+rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax",
+                          denom = "per_employee") {
   vtop <- if (identical(norm, "rank")) prank
           else function(x) range01(x, preserve_zeros = FALSE)
 
   Craw <- tri_subsector |>
     dplyr::group_by(NUTS_ID, NUTS_Name, Country_ID) |>
     dplyr::summarise(
-      dplyr::across(c(ets_emis_t, CBAM_emb_tCO2, Exposure_raw, pers_employed),
+      dplyr::across(dplyr::any_of(c("ets_emis_t", "CBAM_emb_tCO2",
+                                    "Exposure_raw", "pers_employed")),
                     \(x) sum(x, na.rm = TRUE)),
+      # empl_int is the REGIONAL manufacturing employment, identical on
+      # every cell of the region - carry it, don't sum it 11 times
+      dplyr::across(dplyr::any_of("empl_int"), \(x) dplyr::first(x)),
       dplyr::across(dplyr::starts_with("Vuln_"), \(x) mean(x, na.rm = TRUE)),
       .groups = "drop")
+
+  if (denom == "per_employee") {
+    Craw <- Craw |>
+      dplyr::mutate(exposure_per_empl = dplyr::if_else(
+        empl_int > 0, Exposure_raw / empl_int, NA_real_))
+    base_col <- "exposure_per_empl"
+  } else {
+    base_col <- "Exposure_raw"
+  }
 
   Cv <- vuln |>
     dplyr::group_by(NUTS_ID, Country_ID) |>
@@ -378,7 +448,7 @@ rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax") {
 
   Craw |>
     dplyr::mutate(Sector_ID = "C",
-                  Exposure  = .norm_exposure(Exposure_raw, norm),
+                  Exposure  = .norm_exposure(.data[[base_col]], norm),
                   Exposure  = dplyr::if_else(Exposure_raw == 0, 0, Exposure)) |>
     dplyr::inner_join(Cv, by = c("NUTS_ID", "Country_ID")) |>
     dplyr::mutate(
@@ -394,9 +464,10 @@ rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax") {
 #' quintile bands. Exposure legs are published as exposure_ETS /
 #' exposure_CBAM / exposure_total (tonnes CO2).
 build_risk_data <- function(vuln, ets_geo, cbam_leg,
-                            data_reshaped, norm = "minmax") {
-  tri <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = norm)
-  C_tri <- rollup_risk_C(tri, vuln, norm = norm)
+                            data_reshaped, norm = "minmax",
+                            denom = "per_employee") {
+  tri <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = norm, denom = denom)
+  C_tri <- rollup_risk_C(tri, vuln, norm = norm, denom = denom)
 
   # Scope 1/2/3 carried for analysis only — not part of the index
   scopes_raw <- data_reshaped |>
@@ -422,6 +493,7 @@ build_risk_data <- function(vuln, ets_geo, cbam_leg,
                   Scope1_Emissions, Scope2_Emissions, Scope3_Emissions,
                   exposure_ETS = ets_emis_t, exposure_CBAM = CBAM_emb_tCO2,
                   exposure_total = Exposure_raw,
+                  dplyr::any_of(c("exposure_per_empl", "empl_int")),
                   Exposure, Vulnerability, dplyr::starts_with("Vuln_"),
                   Risk_norm, Risk_Band, pers_employed) |>
     tibble::as_tibble()
@@ -436,7 +508,8 @@ build_risk_data <- function(vuln, ets_geo, cbam_leg,
 run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
                                  cbam_leg, risk_data_raw_emissions,
                                  norm = "minmax", cbam_leg_embodied = NULL,
-                                 cbam_leg_hybrid = NULL) {
+                                 cbam_leg_hybrid = NULL,
+                                 denom = "per_employee") {
 
   sub <- risk_data |> dplyr::filter(Sector_ID != "C")
 
@@ -453,7 +526,8 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
   # 2. normalisation variants of the headline
   norm_rows <- purrr::map_dfr(setdiff(c("log", "minmax", "rank"), norm),
                               function(alt) {
-    tri_alt <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = alt)
+    tri_alt <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = alt,
+                              denom = denom)
     d <- sub |>
       dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
       dplyr::inner_join(tri_alt |>
@@ -468,7 +542,8 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
   #    (Review/EXPOSURE_CARBON_COST_REVISION.md §23)
   row_emb <- NULL
   if (!is.null(cbam_leg_embodied)) {
-    tri_emb <- build_risk_tri(vuln, ets_geo, cbam_leg_embodied, norm = norm)
+    tri_emb <- build_risk_tri(vuln, ets_geo, cbam_leg_embodied, norm = norm,
+                              denom = denom)
     d_emb <- sub |>
       dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
       dplyr::inner_join(tri_emb |>
@@ -483,7 +558,8 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
   #    hybrid retained as the sensitivity variant
   row_alloc <- NULL
   if (!is.null(cbam_leg_hybrid)) {
-    tri_alloc <- build_risk_tri(vuln, ets_geo, cbam_leg_hybrid, norm = norm)
+    tri_alloc <- build_risk_tri(vuln, ets_geo, cbam_leg_hybrid, norm = norm,
+                                denom = denom)
     d_alloc <- sub |>
       dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
       dplyr::inner_join(tri_alloc |>
@@ -494,5 +570,65 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
                            d_alloc, "Risk_headline", "Risk_alloc")
   }
 
-  dplyr::bind_rows(row_base, norm_rows, row_emb, row_alloc)
+  # 5. Exposure denominator: headline intensity (per-employee) vs raw volume
+  row_denom <- NULL
+  if (identical(denom, "per_employee")) {
+    tri_vol <- build_risk_tri(vuln, ets_geo, cbam_leg, norm = norm,
+                              denom = "volume")
+    d_denom <- sub |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
+      dplyr::inner_join(tri_vol |>
+                          dplyr::select(NUTS_ID, Sector_ID,
+                                        Risk_vol = Risk_norm),
+                        by = c("NUTS_ID", "Sector_ID"))
+    row_denom <- .sens_row("Headline TRI exposure denominator: per-employee vs volume",
+                           d_denom, "Risk_headline", "Risk_vol")
+  }
+
+  # 6. Exposure per unit of regional GDP (nama_10r_2gdp, MIO_EUR; live pull,
+  #    skipped when offline). Regional TOTAL GDP: sub-sector GVA does not
+  #    exist at NUTS-2, so this variant measures the regional economy's
+  #    carbon dependence on the sector rather than the sector's own
+  #    intensity — reported for comparison only.
+  row_gdp <- tryCatch({
+    nuts24 <- c(NL35 = "NL31", NL36 = "NL33", PT19 = "PT16", PT1D = "PT16",
+                PT1A = "PT17", PT1B = "PT17", PT1C = "PT18")
+    gdp <- restatapi::get_eurostat_data(
+      "nama_10r_2gdp", filters = list(unit = "MIO_EUR"),
+      date_filter = 2020:2024, exact_match = TRUE, label = FALSE) |>
+      tibble::as_tibble() |>
+      dplyr::mutate(geo = as.character(geo), values = as.numeric(values),
+                    time = as.character(time)) |>
+      dplyr::filter(nchar(geo) == 4, !is.na(values)) |>
+      dplyr::mutate(geo = dplyr::coalesce(nuts24[geo], geo)) |>
+      dplyr::group_by(geo, time) |>
+      dplyr::summarise(values = sum(values), .groups = "drop") |>
+      dplyr::group_by(geo) |>
+      dplyr::slice_max(time, n = 1, with_ties = FALSE) |>
+      dplyr::ungroup()
+    hr <- gdp |> dplyr::filter(geo %in% c("HR02", "HR05", "HR06")) |>
+      dplyr::summarise(geo = "HR04", values = sum(values))
+    gdp <- gdp |> dplyr::filter(!geo %in% c("HR02", "HR05", "HR06")) |>
+      dplyr::bind_rows(hr) |>
+      dplyr::transmute(NUTS_ID = geo, gdp_meur = values)
+    tri_gdp <- assemble_risk_panel(vuln, ets_geo, cbam_leg) |>
+      dplyr::mutate(Exposure_raw = ets_emis_t + CBAM_emb_tCO2) |>
+      dplyr::left_join(gdp, by = "NUTS_ID") |>
+      dplyr::mutate(
+        int_gdp  = dplyr::if_else(gdp_meur > 0, Exposure_raw / gdp_meur,
+                                  NA_real_),
+        Exposure = .norm_exposure(int_gdp, norm),
+        Exposure = dplyr::if_else(Exposure_raw == 0, 0, Exposure),
+        E        = dplyr::if_else(Exposure == 0, NA_real_, Exposure),
+        Risk_gdp = range01(sqrt(E) * sqrt(Vulnerability)))
+    d_gdp <- sub |>
+      dplyr::select(NUTS_ID, Sector_ID, Risk_headline = Risk_norm) |>
+      dplyr::inner_join(tri_gdp |>
+                          dplyr::select(NUTS_ID, Sector_ID, Risk_gdp),
+                        by = c("NUTS_ID", "Sector_ID"))
+    .sens_row("Headline TRI exposure denominator: per-employee vs per-regional-GDP",
+              d_gdp, "Risk_headline", "Risk_gdp")
+  }, error = function(e) NULL)
+
+  dplyr::bind_rows(row_base, norm_rows, row_emb, row_alloc, row_denom, row_gdp)
 }

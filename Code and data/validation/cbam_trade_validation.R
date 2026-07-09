@@ -15,14 +15,14 @@
 # Observed inputs:
 #   (a) COARSE ANCHOR (committed): ISTAT extra-EU imports by region, CPA
 #       section C (all manufacturing) + ALL, 2023-2024 —
-#       prototypes/observed_imports_IT_sectionC_2023.csv, pulled 2026-07-02
+#       validation/observed_imports_IT_sectionC_2023.csv, pulled 2026-07-02
 #       from SDMX flow DF_DCSE_CPA_ATECO2007_COE_A_Q_CONJ_REG
 #       (https://esploradati.istat.it/SDMXWS/rest/data/...; the regional
 #       SDMX flows publish CPA sections only — section C ≠ covered goods,
 #       so this anchor tests the broad import geography, not the goods mix).
 #   (b) DIVISION LEVEL (manual export, used automatically when present):
-#       prototypes/observed_imports_IT_divisions.csv
-#       prototypes/observed_imports_ES_divisions.csv
+#       validation/observed_imports_IT_divisions.csv
+#       validation/observed_imports_ES_divisions.csv
 #       columns: region_nuts2, cpa_division (20|23|24), year,
 #       import_value_eur   — region_nuts2 in NUTS-2021 codes.
 #       Recipes:
@@ -40,7 +40,7 @@
 #   - EUR value vs embodied tCO2 (the model adds origin carbon intensity
 #     on top of the value geography; value is the like-for-like basis)
 #
-# Run from "Code and data/":  Rscript prototypes/cbam_trade_validation.R
+# Run from "Code and data/":  Rscript validation/cbam_trade_validation.R
 
 suppressMessages({library(dplyr); library(tidyr); library(readr)})
 source("R/utils.R"); source("R/exposure.R")
@@ -107,7 +107,7 @@ it_map <- tribble(
   "ITG2","ITG2","Sardegna"
 )
 
-obs_raw <- read_csv("prototypes/observed_imports_IT_sectionC_2023.csv",
+obs_raw <- read_csv("validation/observed_imports_IT_sectionC_2023.csv",
                     show_col_types = FALSE, name_repair = "minimal")
 names(obs_raw) <- sub(":.*$", "", names(obs_raw))
 obs <- obs_raw |>
@@ -174,7 +174,7 @@ if (nrow(ceil) > 0) {
 # ── observed (b): division-level files, if present ─────────────────────────
 good_of_div <- c(`20` = "C20", `23` = "C23", `24` = "C24")
 for (cc in c("IT", "ES")) {
-  f <- sprintf("prototypes/observed_imports_%s_divisions.csv", cc)
+  f <- sprintf("validation/observed_imports_%s_divisions.csv", cc)
   if (!file.exists(f)) {
     cat(sprintf("\n[%s divisions] %s not found - export it per the header recipe.\n", cc, f))
     next
@@ -208,5 +208,5 @@ out <- bind_rows(
 ) |>
   left_join(obs |> mutate(country = "IT", good = "TOTAL"),
             by = c("country", "good", "NUTS_ID"))
-write_csv(out, "prototypes/cbam_trade_validation_output.csv")
-cat("\nwrote prototypes/cbam_trade_validation_output.csv\n")
+write_csv(out, "validation/cbam_trade_validation_output.csv")
+cat("\nwrote validation/cbam_trade_validation_output.csv\n")

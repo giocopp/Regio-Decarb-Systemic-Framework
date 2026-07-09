@@ -3,7 +3,7 @@
 # (used 2026-07-04 because api.ohsome.org returned HTTP 503 on all count
 # endpoints), then assigns them to NUTS-2 by point-in-polygon (gisco 2021,
 # same machinery as the ETS geocoding). Writes the cache the main prototype
-# consumes (prototypes/osm_bank_counts_nuts2.csv).
+# consumes (validation/osm_bank_counts_nuts2.csv).
 # Caveat vs ohsome: Overpass serves the LIVE database — no time pin. The
 # retrieval date is recorded in the snapshot column; for the final paper
 # run, redo the counts against a pinned ohsome timestamp or a dated
@@ -16,10 +16,10 @@ iso_of <- c(AT="AT",BE="BE",BG="BG",CY="CY",CZ="CZ",DE="DE",DK="DK",EE="EE",
             EL="GR",ES="ES",FI="FI",FR="FR",HR="HR",HU="HU",IE="IE",IT="IT",
             LT="LT",LU="LU",LV="LV",MT="MT",NL="NL",PL="PL",PT="PT",RO="RO",
             SE="SE",SI="SI",SK="SK")
-dir.create("prototypes/overpass_cache", showWarnings = FALSE)
+dir.create("validation/overpass_cache", showWarnings = FALSE)
 
 fetch_cc <- function(cc) {
-  f <- sprintf("prototypes/overpass_cache/banks_%s.csv", cc)
+  f <- sprintf("validation/overpass_cache/banks_%s.csv", cc)
   if (file.exists(f)) return(read_csv(f, show_col_types = FALSE))
   q <- sprintf(paste0('[out:json][timeout:300];area["ISO3166-1"="%s"]',
                       '[admin_level=2]->.a;nwr["amenity"="bank"](area.a);',
@@ -71,6 +71,6 @@ hr <- osm |> filter(NUTS_ID %in% c("HR02","HR05","HR06")) |>
   summarise(NUTS_ID = "HR04", osm_banks = sum(osm_banks))
 osm <- osm |> filter(!NUTS_ID %in% c("HR02","HR05","HR06")) |> bind_rows(hr) |>
   mutate(snapshot = paste0("overpass-live-", Sys.Date()))
-write_csv(osm, "prototypes/osm_bank_counts_nuts2.csv")
-cat("wrote prototypes/osm_bank_counts_nuts2.csv -", nrow(osm), "regions,",
+write_csv(osm, "validation/osm_bank_counts_nuts2.csv")
+cat("wrote validation/osm_bank_counts_nuts2.csv -", nrow(osm), "regions,",
     sum(osm$osm_banks), "banks\n")

@@ -37,6 +37,18 @@ normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
   # are already downscaled by employment shares upstream).
   to_per_empl <- c("Gross_Fixed_Capital_Formation")
 
+  # POOLED (headline) path only: Energy_Consumption becomes an intensity
+  # (GWh per employee). The audit of 2026-07-09 showed that the
+  # employment-downscaled volume is >0.99-correlated with employment within
+  # every country x sector — i.e. its within-country "regional variation"
+  # is pure size, a vulnerability artifact of the same class as the dropped
+  # Sector_Concentration. Divided by employment it reduces algebraically to
+  # the national energy intensity of the sector (a country x sector
+  # constant, like Fossil_Share) — the honest information content. The
+  # LEGACY within-sector baseline (pool = FALSE) keeps the volume, as
+  # submitted.
+  if (pool) to_per_empl <- c(to_per_empl, "Energy_Consumption")
+
   data_ready <- data_ready |>
     select(-any_of(c("n_enterprises", "pers_employed"))) |>
     left_join(
@@ -54,6 +66,16 @@ normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
       Value = if_else(
         Indicator %in% to_per_empl & !is.na(pers_employed) & pers_employed > 0,
         Value / pers_employed,
+        Value
+      ),
+      # A per-employee indicator with no employment must be NA, not the
+      # undivided volume: keeping the volume mixes scales inside the group
+      # and re-creates fake regional variation (found 2026-07-09 — the six
+      # affected cells then take the country x sector median intensity).
+      Value = if_else(
+        Indicator %in% to_per_empl &
+          (is.na(pers_employed) | pers_employed <= 0),
+        NA_real_,
         Value
       ),
       Notes = if_else(

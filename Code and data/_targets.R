@@ -153,7 +153,7 @@ list(
   ),
 
   # TECH-RIS.xlsx is regenerated OUTSIDE the pipeline by
-  # prototypes/build_tech_ris.R (official RIS 2025 database). Track it as a
+  # data_builders/build_tech_ris.R (official RIS 2025 database). Track it as a
   # file target so content changes invalidate the harmonize chain — before
   # 2026-07-03 it was untracked and edits silently never propagated.
   tar_target(
@@ -301,7 +301,7 @@ list(
                            "nrg_bal_c",
                            "nrg_bal_c",
                            "ext_tec01",
-                           "rd_e_berdindr2 + demo_r_d2jan",
+                           src(berd_data, "rd_e_gerdreg (sectperf=BES, PC_GDP)"),
                            "nama_10_cp_a21"),
         Year_Selected = c(yr(empl_weights), yr(gfcf_data), yr(unemployment_data),
                           yr(labour_slack_data), yr(highly_skilled_data),
@@ -372,7 +372,13 @@ list(
   # "minmax" | "log" | "rank" (sensitivity_risk compares all three)
   tar_target(tri_norm_mode, "minmax"),
 
-  # EUTL inputs built once by prototypes/ets_geocode.R; provenance in
+  # Exposure denominator (2026-07-09): "per_employee" — covered carbon per
+  # employee (intensity; removes the region-size component) — or "volume"
+  # (raw tonnes, the former headline, kept as a sensitivity row). See
+  # METHODOLOGY §10.1 and assemble_exposure() in R/exposure.R.
+  tar_target(tri_exposure_denom, "per_employee"),
+
+  # EUTL inputs built once by data_builders/ets_geocode.R; provenance in
   # Initial data/EUTL_euets_info/README.md
   tar_target(ets_nuts2_file,
              "Initial data/EUTL_euets_info/ets_nuts2_sector.csv",
@@ -440,7 +446,8 @@ list(
   tar_target(
     risk_data,
     build_risk_data(vulnerability_pooled, ets_geo, cbam_leg,
-                    data_reshaped, norm = tri_norm_mode)
+                    data_reshaped, norm = tri_norm_mode,
+                    denom = tri_exposure_denom)
   ),
 
   tar_target(
@@ -520,7 +527,8 @@ list(
                          cbam_leg, risk_data_raw_emissions,
                          norm = tri_norm_mode,
                          cbam_leg_embodied = cbam_leg_embodied,
-                         cbam_leg_hybrid = cbam_leg_hybrid)
+                         cbam_leg_hybrid = cbam_leg_hybrid,
+                         denom = tri_exposure_denom)
   ),
 
   tar_target(

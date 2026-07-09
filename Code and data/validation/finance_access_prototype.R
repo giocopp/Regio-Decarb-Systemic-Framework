@@ -16,7 +16,7 @@
 #   DIGITAL: internet-banking usage, Eurostat isoc_r_iuse_i I_IUBK
 #     (NUTS-2, 213 regions, 2021-2025), NUTS-1/national fallback for the rest.
 #
-# Validation outputs (printed + prototypes/finance_access_output.csv):
+# Validation outputs (printed + validation/finance_access_output.csv):
 #   F1 completeness: OSM country totals vs ECB offices (ratio table)
 #   F2 direction:    country means vs ECB SAFE "financing obstacles" (FOB)
 #   F3 independence: correlations with Exposure, Vulnerability, income
@@ -48,13 +48,13 @@
 #    This file + finance_access_output.csv stand as the due-diligence
 #    evidence backing METHODOLOGY §11.1 (no Finance dimension).
 #
-# Run from "Code and data/":  Rscript prototypes/finance_access_prototype.R
+# Run from "Code and data/":  Rscript validation/finance_access_prototype.R
 
 suppressMessages({library(dplyr); library(tidyr); library(readr)
                   library(sf); library(giscoR); library(jsonlite)})
 
 PIN_TIME <- "2026-01-01"   # OSM snapshot (clipped to ohsome extent if needed)
-OUT <- "prototypes/finance_access_output.csv"
+OUT <- "validation/finance_access_output.csv"
 eu27 <- c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
           "IE","IT","LT","LU","LV","MT","NL","PL","PT","RO","SE","SI","SK")
 
@@ -73,7 +73,7 @@ t_max <- substr(meta$extractRegion$temporalExtent$toTimestamp, 1, 10)
 t_use <- min(PIN_TIME, t_max)
 cat("ohsome snapshot:", t_use, "(requested", PIN_TIME, ", extent to", t_max, ")\n")
 
-osm_file <- "prototypes/osm_bank_counts_nuts2.csv"
+osm_file <- "validation/osm_bank_counts_nuts2.csv"
 if (file.exists(osm_file)) {
   osm <- read_csv(osm_file, show_col_types = FALSE)
   cat("using cached", osm_file, "-", nrow(osm), "regions\n")
@@ -81,7 +81,7 @@ if (file.exists(osm_file)) {
   # one region per request via the plain /elements/count endpoint: slower
   # but unambiguous (no group-id mapping) and robust to server timeouts.
   # Incremental cache: each region is appended as soon as it returns.
-  cache <- "prototypes/osm_bank_counts_cache.csv"
+  cache <- "validation/osm_bank_counts_cache.csv"
   have <- if (file.exists(cache)) read_csv(cache, show_col_types = FALSE)$NUTS_ID else character(0)
   for (id in setdiff(q_ids, have)) {
     sub <- n2 |> filter(NUTS_ID == id)
