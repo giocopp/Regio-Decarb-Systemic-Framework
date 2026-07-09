@@ -1,5 +1,8 @@
 # norm_alternatives_map.R — deck figure: Total-Manufacturing Exposure and
-# Risk under the three wired normalisations (minmax | log | rank).
+# Risk under min-max (headline) vs log. Rank was dropped from the slides
+# (2026-07-09): it is the continuous version of the quintile-class map
+# rendering and agrees with log at rho 0.98 — it stays only as a
+# sensitivity-workbook row.
 # CONTINUOUS fills on purpose: the figure exists to show how the score
 # SPACING changes — the Exposure ordering is identical under all three
 # (Spearman = 1.00); Risk reranks at rho ~ 0.78 (minmax vs log/rank) while
@@ -24,14 +27,14 @@ pal_exp  <- RColorBrewer::brewer.pal(7, "Purples")
 pal_risk <- RColorBrewer::brewer.pal(7, "Reds")
 
 panels <- list()
-for (nm in c("minmax", "log", "rank")) {
+for (nm in c("log", "minmax")) {
   d <- build_risk_data(vuln, geo, cbam, drs, norm = nm,
                        denom = "per_employee") |>
     filter(Sector_ID == "C") |>
     mutate(Exposure = if_else(Exposure == 0, NA_real_, Exposure))
   m <- layers$nuts2 |> left_join(d, by = "NUTS_ID") |>
     st_transform(.crs_lambert)
-  lab <- c(minmax = "min-max (headline)", log = "log", rank = "rank")[[nm]]
+  lab <- c(log = "log (headline)", minmax = "min-max")[[nm]]
   panels[[paste0("E_", nm)]] <-
     .single_map(m, layers$europe_bg, layers$eu_outline,
                 "Exposure", "Exposure", pal_exp) +
@@ -44,10 +47,26 @@ for (nm in c("minmax", "log", "rank")) {
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10))
 }
 
-fig <- (panels$E_minmax | panels$E_log | panels$E_rank) /
-       (panels$R_minmax | panels$R_log | panels$R_rank) +
+# third column: quintile classes of the headline scores (norm-invariant:
+# identical under min-max, log or rank because the ordering is identical).
+d0 <- build_risk_data(vuln, geo, cbam, drs, norm = "log",
+                      denom = "per_employee") |>
+  filter(Sector_ID == "C") |>
+  mutate(Exposure = if_else(Exposure == 0, NA_real_, Exposure))
+m0 <- layers$nuts2 |> left_join(d0, by = "NUTS_ID") |> st_transform(.crs_lambert)
+panels$E_q <- .single_map(m0, layers$europe_bg, layers$eu_outline,
+                          "Exposure", "Exposure", pal_exp, bins = TRUE) +
+  ggtitle("Exposure — quintile classes (= binned rank)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10))
+panels$R_q <- .single_map(m0, layers$europe_bg, layers$eu_outline,
+                          "Risk_norm", "Risk", pal_risk, bins = TRUE) +
+  ggtitle("Risk — quintile classes (= binned rank)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10))
+
+fig <- (panels$E_log | panels$E_minmax | panels$E_q) /
+       (panels$R_log | panels$R_minmax | panels$R_q) +
   patchwork::plot_annotation(
-    title = "Total Manufacturing — the three normalisations (continuous scales)",
+    title = "Total Manufacturing — log (headline) vs min-max vs quintile classes",
     theme = theme(plot.title = element_text(size = 13, face = "bold",
                                             hjust = 0.5)))
 

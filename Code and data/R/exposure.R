@@ -8,9 +8,9 @@
 # carbon price is applied: a single EU-wide EUA price is a common scalar that
 # cancels under any monotone normalisation, so it never moved the ranking. The
 # earlier priced formulation (EUA x free-allocation/CBAM coverage) and its
-# 2024-2034 phase-in trajectory were removed (see git history). norm = "minmax"
-# (tri_norm_mode); true-zero cells keep Exposure = 0; pooled normalisation
-# throughout.
+# 2024-2034 phase-in trajectory were removed (see git history). norm = "log"
+# (tri_norm_mode, FINAL 2026-07-09); true-zero cells keep Exposure = 0;
+# pooled normalisation throughout.
 
 .eu27_codes <- function()
   c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
@@ -288,7 +288,7 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
 #' @param df tibble with NUTS_ID, Country_ID, Sector_ID, ets_emis_t
 #'   (EUTL verified emissions, tonnes), CBAM_emb_tCO2 (tonnes) and — for
 #'   denom = "per_employee" — pers_employed
-#' @param norm "minmax" (the wired headline, tri_norm_mode), "log", or "rank"
+#' @param norm "log" (the wired headline, tri_norm_mode), "minmax", or "rank"
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
 #' @param denom "per_employee" (headline; regional mfg employment) or "volume"
 #' @return df plus Exposure_raw (covered tCO2), empl_int + exposure_per_empl
@@ -303,19 +303,44 @@ assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax",
   if (denom == "per_employee") {
     if (!"pers_employed" %in% names(d))
       stop("assemble_exposure(denom = 'per_employee') needs pers_employed")
+    # Cell-level sector employment (FINAL, 2026-07-09): the denominator is
+    # the sector's own regional workforce. Where SBS suppresses or omits it
+    # (confidential cells, e.g. IJmuiden's NL32 C24; countries reporting no
+    # employment in the sector at all, e.g. LU C24), a three-tier fallback
+    # estimates it: own value -> region-manufacturing share x national
+    # sector employment -> region manufacturing x EU-wide sector share.
+    # The known SBS pathologies (HQ attribution, contractor exclusion,
+    # reporting volatility) bias some cell denominators low; under the LOG
+    # headline normalisation (tri_norm_mode = "log") those artifact
+    # outliers are compressed instead of pinning the scale — disclosed in
+    # METHODOLOGY §10.1.
     d <- d |>
       dplyr::group_by(NUTS_ID) |>
-      dplyr::mutate(empl_int = sum(pers_employed, na.rm = TRUE)) |>
+      dplyr::mutate(.reg_mfg = sum(pers_employed, na.rm = TRUE)) |>
+      dplyr::group_by(Country_ID) |>
+      dplyr::mutate(.cty_mfg = sum(pers_employed, na.rm = TRUE)) |>
+      dplyr::group_by(Country_ID, Sector_ID) |>
+      dplyr::mutate(.cty_sec = sum(pers_employed, na.rm = TRUE)) |>
       dplyr::ungroup() |>
+      dplyr::group_by(Sector_ID) |>
+      dplyr::mutate(.eu_sec = sum(pers_employed, na.rm = TRUE)) |>
+      dplyr::ungroup() |>
+      dplyr::mutate(.eu_mfg = sum(pers_employed, na.rm = TRUE)) |>
       dplyr::mutate(
+        empl_int = dplyr::case_when(
+          !is.na(pers_employed) & pers_employed > 0 ~ pers_employed,
+          .cty_sec > 0 ~ .cty_sec * .reg_mfg / pmax(.cty_mfg, 1),
+          TRUE ~ .reg_mfg * .eu_sec / pmax(.eu_mfg, 1)),
         exposure_per_empl = dplyr::if_else(empl_int > 0,
                                            Exposure_raw / empl_int,
-                                           NA_real_))
+                                           NA_real_)
+      ) |>
+      dplyr::select(-.reg_mfg, -.cty_mfg, -.cty_sec, -.eu_sec, -.eu_mfg)
     n_orphan <- sum(d$Exposure_raw > 0 &
                       (is.na(d$empl_int) | d$empl_int <= 0), na.rm = TRUE)
     if (n_orphan > 0)
-      warning(n_orphan, " cells carry covered carbon in regions with no",
-              " reported manufacturing employment - their Exposure is NA")
+      warning(n_orphan, " cells carry covered carbon but no employment even",
+              " after the fallbacks - their Exposure is NA")
     base_col <- "exposure_per_empl"
   } else {
     base_col <- "Exposure_raw"
@@ -425,9 +450,7 @@ rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax",
       dplyr::across(dplyr::any_of(c("ets_emis_t", "CBAM_emb_tCO2",
                                     "Exposure_raw", "pers_employed")),
                     \(x) sum(x, na.rm = TRUE)),
-      # empl_int is the REGIONAL manufacturing employment, identical on
-      # every cell of the region - carry it, don't sum it 11 times
-      dplyr::across(dplyr::any_of("empl_int"), \(x) dplyr::first(x)),
+      dplyr::across(dplyr::any_of("empl_int"), \(x) sum(x, na.rm = TRUE)),
       dplyr::across(dplyr::starts_with("Vuln_"), \(x) mean(x, na.rm = TRUE)),
       .groups = "drop")
 

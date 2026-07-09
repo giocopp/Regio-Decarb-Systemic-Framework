@@ -370,7 +370,7 @@ list(
   # See METHODOLOGY.md §10.1 and R/exposure.R.
 
   # "minmax" | "log" | "rank" (sensitivity_risk compares all three)
-  tar_target(tri_norm_mode, "minmax"),
+  tar_target(tri_norm_mode, "log"),   # FINAL 2026-07-09: log headline
 
   # Exposure denominator (2026-07-09): "per_employee" — covered carbon per
   # employee (intensity; removes the region-size component) — or "volume"
