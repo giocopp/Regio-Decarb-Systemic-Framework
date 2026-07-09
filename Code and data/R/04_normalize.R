@@ -7,9 +7,13 @@
 #' @param data_long    Tibble from `reshape_to_grid()`.
 #' @param empl_weights Either a path to `EMPL_Region.xlsx` or the in-memory
 #'   `empl_weights` tibble (Country_ID, NUTS_ID, Sector_ID, pers_employed, weight).
+#' @param pool If TRUE, min-max scale non-Policy indicators across the whole
+#'   panel (group by Indicator only) instead of within (Indicator x Sector_ID).
+#'   Used by the pooled Vulnerability of the headline TRI (R/exposure.R).
+#'   Default FALSE preserves the within-sector baseline.
 #' @return List with `$long` (long normalised tibble) and `$wide`
 #'   (one column per indicator using Value_N).
-normalize_indicators <- function(data_long, empl_weights) {
+normalize_indicators <- function(data_long, empl_weights, pool = FALSE) {
 
   # Drop ultraperipheral / obsolete NUTS-2 regions and the helper indicator.
   data_ready <- data_long |>
@@ -24,46 +28,26 @@ normalize_indicators <- function(data_long, empl_weights) {
   }
 
   # NUTS-2013 -> NUTS-2021 recombinations for employment data (mirroring the
-  # reshape step in 03_reshape.R).
-  hr04_empl <- empl_data |>
-    filter(NUTS_ID %in% c("HR02", "HR05", "HR06")) |>
-    group_by(Country_ID, Sector_ID) |>
-    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
-              weight        = sum(weight, na.rm = TRUE),
-              .groups = "drop") |>
-    mutate(NUTS_ID = "HR04")
+  # reshape step in 03_reshape.R). Shared helper in utils.R.
+  empl_data <- recombine_empl_nuts(empl_data)
 
-  nl_remap <- empl_data |>
-    filter(NUTS_ID %in% c("NL35", "NL36")) |>
-    mutate(NUTS_ID = case_when(
-      NUTS_ID == "NL35" ~ "NL31",
-      NUTS_ID == "NL36" ~ "NL33",
-      TRUE              ~ NUTS_ID
-    ))
+  # Per-employee normalisation for GFCF only. BERD is now a regional R&D
+  # INTENSITY (% of regional GDP, rd_e_gerdreg via create_regional_berd) — already
+  # intensive, so it is NOT divided by employment (the other extensive indicators
+  # are already downscaled by employment shares upstream).
+  to_per_empl <- c("Gross_Fixed_Capital_Formation")
 
-  pt_remap <- empl_data |>
-    filter(NUTS_ID %in% c("PT19", "PT1A", "PT1B", "PT1C", "PT1D")) |>
-    mutate(target = case_when(
-      NUTS_ID %in% c("PT19", "PT1D") ~ "PT16",
-      NUTS_ID %in% c("PT1A", "PT1B") ~ "PT17",
-      NUTS_ID == "PT1C"              ~ "PT18",
-      TRUE                           ~ NUTS_ID
-    )) |>
-    group_by(Country_ID, Sector_ID, target) |>
-    summarise(pers_employed = sum(pers_employed, na.rm = TRUE),
-              weight        = sum(weight, na.rm = TRUE),
-              .groups = "drop") |>
-    rename(NUTS_ID = target)
-
-  obsolete_nuts <- c("HR02", "HR05", "HR06", "NL35", "NL36",
-                     "PT19", "PT1A", "PT1B", "PT1C", "PT1D")
-  empl_data <- empl_data |>
-    filter(!NUTS_ID %in% obsolete_nuts) |>
-    bind_rows(hr04_empl, nl_remap, pt_remap)
-
-  # Per-employee normalisation for GFCF and BERD only — the other extensive
-  # indicators are already downscaled by employment shares upstream.
-  to_per_empl <- c("Gross_Fixed_Capital_Formation", "BERD")
+  # POOLED (headline) path only: Energy_Consumption becomes an intensity
+  # (GWh per employee). The audit of 2026-07-09 showed that the
+  # employment-downscaled volume is >0.99-correlated with employment within
+  # every country x sector — i.e. its within-country "regional variation"
+  # is pure size, a vulnerability artifact of the same class as the dropped
+  # Sector_Concentration. Divided by employment it reduces algebraically to
+  # the national energy intensity of the sector (a country x sector
+  # constant, like Fossil_Share) — the honest information content. The
+  # LEGACY within-sector baseline (pool = FALSE) keeps the volume, as
+  # submitted.
+  if (pool) to_per_empl <- c(to_per_empl, "Energy_Consumption")
 
   data_ready <- data_ready |>
     select(-any_of(c("n_enterprises", "pers_employed"))) |>
@@ -82,6 +66,16 @@ normalize_indicators <- function(data_long, empl_weights) {
       Value = if_else(
         Indicator %in% to_per_empl & !is.na(pers_employed) & pers_employed > 0,
         Value / pers_employed,
+        Value
+      ),
+      # A per-employee indicator with no employment must be NA, not the
+      # undivided volume: keeping the volume mixes scales inside the group
+      # and re-creates fake regional variation (found 2026-07-09 — the six
+      # affected cells then take the country x sector median intensity).
+      Value = if_else(
+        Indicator %in% to_per_empl &
+          (is.na(pers_employed) | pers_employed <= 0),
+        NA_real_,
         Value
       ),
       Notes = if_else(
@@ -137,8 +131,9 @@ normalize_indicators <- function(data_long, empl_weights) {
         ),
         Value_N = case_when(
           is.na(Value)                                 ~ NA_real_,
-          max_val - min_val == 0                       ~ 0.5,
+          # true-zero rule precedes the constant rule (all-zero group -> 0)
           Indicator == "Scope1_Emissions" & Value == 0 ~ 0.00,
+          max_val - min_val == 0                       ~ 0.5,
           Value == min_val                             ~ 0.01,
           Value == max_val                             ~ 0.99,
           TRUE                                         ~ 0.01 + norm0_1 * 0.98
@@ -148,7 +143,9 @@ normalize_indicators <- function(data_long, empl_weights) {
   }
 
   pp_norm    <- .compute_value_n(pp_data,    c("Indicator"))
-  other_norm <- .compute_value_n(other_data, c("Indicator", "Sector_ID"))
+  other_norm <- .compute_value_n(
+    other_data,
+    if (pool) c("Indicator") else c("Indicator", "Sector_ID"))
 
   # Reverse "negative" indicators (higher raw -> lower vulnerability).
   data_long_norm <- bind_rows(pp_norm, other_norm) |>

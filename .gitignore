@@ -38,3 +38,7 @@ Code and data/Final data/*.csv
 # the git diff between commits is the audit trail of how the rolling
 # vintage moves over time. Reviewers and replicators see the exact paper
 # numbers by checking out the submission commit / tag.
+
+# OS / Office junk
+.DS_Store
+~$*

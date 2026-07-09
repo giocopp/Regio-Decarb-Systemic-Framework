@@ -1,0 +1,13 @@
+Sector_ID,ets_free_alloc_share,cbam_covered,cbam_goods,source_note
+C,NA,NA,partial (via C19-C20/C23/C24),"Total manufacturing aggregate; ETS free-alloc share = sector-weighted; CBAM partial"
+C10-C12,NA,0,,"Food/beverage/tobacco — minimal ETS; not CBAM"
+C13-C15,NA,0,,"Textiles/leather — not ETS-listed; not CBAM"
+C16-C18,NA,0,,"Wood/paper/printing — pulp&paper ETS-listed; not CBAM"
+C19-C20,NA,1,fertilizers; hydrogen,"Chemicals/petrochem — ETS-listed; CBAM covers fertilizers (C20.15) & hydrogen (C20.11)"
+C21-C22,NA,0,,"Pharma/plastic — not CBAM"
+C23,NA,1,cement,"Non-metallic minerals — ETS-listed; CBAM covers cement (C23.51)"
+C24,NA,1,iron & steel; aluminium,"Basic metals — ETS-listed; CBAM covers iron&steel (C24.1-3) & aluminium (C24.42)"
+C25+C28,NA,0,,"Fabricated metal & machinery — not CBAM (downstream; possible future scope)"
+C29-C30,NA,0,,"Motor vehicles & transport equip — not CBAM"
+C26-C27,NA,0,,"Electronic & electrical — not CBAM"
+C31-C33,NA,0,,"Other manufacturing & repair — not CBAM"

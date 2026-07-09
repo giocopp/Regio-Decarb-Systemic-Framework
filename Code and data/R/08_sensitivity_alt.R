@@ -112,8 +112,7 @@ run_edgar_sensitivity <- function(risk_data, edgar_scope1) {
       dplyr::mutate(
         Scope1_Emissions_alt = range01(Scope1_kt_EDGAR),
         Exposure_alt = rowMeans(dplyr::pick(
-          Scope1_Emissions_alt, Scope2_Emissions,
-          Scope3_Emissions, Policy_Pressure
+          Scope1_Emissions_alt, Scope2_Emissions, Scope3_Emissions
         ), na.rm = TRUE),
         Exposure_alt = range01(Exposure_alt),
         Risk_raw_alt = Exposure_alt^0.5 * Vulnerability^0.5,
@@ -123,7 +122,9 @@ run_edgar_sensitivity <- function(risk_data, edgar_scope1) {
     rho <- cor(s_data$Risk_norm, s_data$Risk_alt,
                use = "pairwise.complete.obs", method = "spearman")
 
+    # Single-sector test: pooled and within-sector rho coincide.
     tibble::tibble(test = paste0("EDGAR Scope1 [", s, "]"),
-                   spearman_rho = round(rho, 4))
+                   rho_pooled = round(rho, 4),
+                   rho_within_sector = round(rho, 4))
   })
 }

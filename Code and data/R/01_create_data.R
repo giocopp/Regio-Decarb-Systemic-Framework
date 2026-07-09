@@ -638,70 +638,61 @@ create_scope3 <- function(empl_weights) {
 
 #' Extract European Quality of Government Index (EQI) at NUTS-2 level
 #'
-#' Reads QoG EU Regional Dataset, filters to the 2017 EQI survey wave, and
-#' keeps EU-27 NUTS-2 regions only.
+#' Reads the standalone EQI regional release (qog_eqi_long_24.csv, Charron
+#' et al. 2024; waves 2010-2024) and uses the requested wave (default 2024,
+#' the latest). Countries surveyed at NUTS-2 enter directly (NUTS-2021
+#' codes; HR02/HR05/HR06 are recombined to HR04 downstream in
+#' reshape_to_grid). Belgium and Germany are surveyed at NUTS-1 and are
+#' replicated to their NUTS-2 regions; the single-NUTS-2 states (CY, EE,
+#' LU, LV, MT) carry the national score.
 #'
-#' @param qog_path Path to qog_eureg.csv
+#' @param qog_path Path to qog_eqi_long_24.csv
+#' @param wave EQI survey year to use (default 2024)
 #' @return Tibble with columns: Country_CD, NUTS_ID, Component, Dimension,
 #'   Variable, Unit, Value
-create_qog <- function(qog_path, base_data_path) {
+create_qog <- function(qog_path, base_data_path, wave = 2024L) {
 
-  qog <- readr::read_csv(qog_path, show_col_types = FALSE)
+  eqi <- readr::read_csv(qog_path, show_col_types = FALSE)
 
-  # Determine latest available EQI survey year (target: 2017)
-  eqi_avail <- qog |>
-    dplyr::filter(!is.na(eqi_score_nuts2) | !is.na(eqi_score_nuts0)) |>
-    dplyr::distinct(year) |>
-    dplyr::pull(year)
-  eqi_year <- if (2017 %in% eqi_avail) 2017L else max(eqi_avail)
+  w <- eqi |>
+    dplyr::filter(year == wave, NUTS0_code %in% eu27, !is.na(EQI))
+  if (nrow(w) == 0) stop("create_qog: no EQI rows for wave ", wave)
 
-  # ── Pass 1: NUTS-2 EQI (16 countries with regional surveys) ────
-  qog_nuts2 <- qog |>
-    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts2),
-                  !is.na(nuts2), nchar(nuts2) == 4,
-                  substr(nuts2, 1, 2) %in% eu27) |>
-    dplyr::transmute(NUTS_ID = nuts2, EQI = eqi_score_nuts2,
-                     EQI_level = "NUTS-2")
-
-  # ── Pass 2: NUTS-0 EQI (national fallback for missing countries) ─
-  # The qog_eureg.csv carries national EQI in the eqi_score_nuts0 column
-  # on rows where nuts2 is NA and nuts0 = country code.
-  qog_nuts0 <- qog |>
-    dplyr::filter(year == eqi_year, !is.na(eqi_score_nuts0),
-                  is.na(nuts2), nuts0 %in% eu27) |>
-    dplyr::select(Country_CD = nuts0, EQI_nat = eqi_score_nuts0)
-
-  # NUTS-2 region list per country
+  # NUTS-2 region list per country (base grid, NUTS-2021)
   nuts2_grid <- readxl::read_xlsx(base_data_path) |>
     dplyr::filter(nchar(NUTS_ID) == 4,
                   substr(NUTS_ID, 1, 2) %in% eu27) |>
-    dplyr::transmute(NUTS_ID, Country_CD = substr(NUTS_ID, 1, 2))
+    dplyr::distinct(NUTS_ID) |>
+    dplyr::mutate(Country_CD = substr(NUTS_ID, 1, 2),
+                  NUTS1_CD   = substr(NUTS_ID, 1, 3))
 
-  countries_with_nuts2 <- substr(qog_nuts2$NUTS_ID, 1, 2) |> unique()
-  fallback_rows <- nuts2_grid |>
-    dplyr::filter(!Country_CD %in% countries_with_nuts2) |>
-    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
-    dplyr::transmute(NUTS_ID,
-                     EQI = EQI_nat,
-                     EQI_level = "NUTS-0 (national, replicated)")
+  # ── Pass 1: countries surveyed at NUTS-2 — use directly ────────
+  qog_nuts2 <- w |>
+    dplyr::filter(nuts_level == 2, !is.na(NUTS2_code)) |>
+    dplyr::transmute(NUTS_ID = NUTS2_code, EQI, EQI_level = "NUTS-2")
 
-  # Final fallback: NUTS-2 regions in base_data not yet covered by either
-  # pass (e.g. Ireland's IE04/IE05/IE06 vs the NUTS-2013 IE01/IE02 in the
-  # source) get the country NUTS-0 EQI.
-  missing_nuts2 <- nuts2_grid |>
-    dplyr::anti_join(qog_nuts2, by = "NUTS_ID") |>
-    dplyr::anti_join(fallback_rows, by = "NUTS_ID") |>
-    dplyr::inner_join(qog_nuts0, by = "Country_CD") |>
-    dplyr::transmute(NUTS_ID, EQI = EQI_nat,
-                     EQI_level = "NUTS-0 (national, mismatched NUTS-2 codes)")
+  # ── Pass 2: countries surveyed at NUTS-1 (BE, DE) — replicate ──
+  qog_nuts1 <- nuts2_grid |>
+    dplyr::inner_join(w |>
+                        dplyr::filter(nuts_level == 1, !is.na(NUTS1_code)) |>
+                        dplyr::transmute(NUTS1_CD = NUTS1_code, EQI),
+                      by = "NUTS1_CD") |>
+    dplyr::transmute(NUTS_ID, EQI, EQI_level = "NUTS-1 (replicated)")
 
-  combined <- dplyr::bind_rows(qog_nuts2, fallback_rows, missing_nuts2)
+  # ── Pass 3: countries surveyed nationally (single-NUTS-2 states) ─
+  qog_nuts0 <- nuts2_grid |>
+    dplyr::inner_join(w |>
+                        dplyr::filter(nuts_level == 0) |>
+                        dplyr::transmute(Country_CD = NUTS0_code, EQI),
+                      by = "Country_CD") |>
+    dplyr::transmute(NUTS_ID, EQI, EQI_level = "NUTS-0 (national, replicated)")
 
-  # One row per NUTS_ID with the most specific EQI level available;
-  # NUTS-2 wins over NUTS-0 fallbacks.
+  combined <- dplyr::bind_rows(qog_nuts2, qog_nuts1, qog_nuts0)
+
+  # One row per NUTS_ID with the most specific EQI level available.
   level_priority <- c("NUTS-2" = 1L,
-                      "NUTS-0 (national, replicated)" = 2L,
-                      "NUTS-0 (national, mismatched NUTS-2 codes)" = 3L)
+                      "NUTS-1 (replicated)" = 2L,
+                      "NUTS-0 (national, replicated)" = 3L)
   collapsed <- combined |>
     dplyr::mutate(.prio = level_priority[EQI_level]) |>
     dplyr::filter(!is.na(EQI)) |>
@@ -810,16 +801,62 @@ create_re_potential <- function(enspreso_path) {
     ) |>
     dplyr::filter(Country_ID %in% eu27)
 
-  ensp_clean |>
+  # ENSPRESO carries pre-2016 NUTS-2 codes. Without a crosswalk, all of
+  # France, six Polish regions, HU1x, Ireland and Lithuania fail the join and
+  # were silently country-median-imputed (bug found 2026-07-03). Two steps:
+  # (1) 1:1 renames, verified geometrically against gisco NUTS-2013 vs
+  # NUTS-2021 polygons (>=97% area overlap for every pair);
+  # (2) area-share splits for the reorganised regions, with shares computed
+  # at run time from gisco NUTS-2021 polygon areas (EPSG:3035) — a disclosed
+  # approximation for an extensive land-based potential (TWh).
+  # HR04 needs no mapping: ENSPRESO's (pre-split) HR04 equals the recombined
+  # HR04 of the 230-region grid and now survives reshape (03_reshape.R).
+  renames <- c(FR21 = "FRF2", FR22 = "FRE2", FR23 = "FRD2", FR24 = "FRB0",
+               FR25 = "FRD1", FR26 = "FRC1", FR30 = "FRE1", FR41 = "FRF3",
+               FR42 = "FRF1", FR43 = "FRC2", FR51 = "FRG0", FR52 = "FRH0",
+               FR53 = "FRI3", FR61 = "FRI1", FR62 = "FRJ2", FR63 = "FRI2",
+               FR71 = "FRK2", FR72 = "FRK1", FR81 = "FRJ1", FR82 = "FRL0",
+               FR83 = "FRM0",
+               PL11 = "PL71", PL31 = "PL81", PL32 = "PL82", PL33 = "PL72",
+               PL34 = "PL84")
+  splits <- list(list(old = "PL12",            new = c("PL91", "PL92")),
+                 list(old = "HU10",            new = c("HU11", "HU12")),
+                 list(old = "LT00",            new = c("LT01", "LT02")),
+                 list(old = c("IE01", "IE02"), new = c("IE04", "IE05", "IE06")))
+
+  v <- ensp_clean |>
+    dplyr::mutate(NUTS_ID = dplyr::coalesce(renames[nuts2_code], nuts2_code)) |>
+    dplyr::group_by(Country_ID, NUTS_ID) |>
+    dplyr::summarise(RE_Total_TWh = sum(RE_Total_TWh, na.rm = TRUE),
+                     .groups = "drop")
+
+  n21 <- giscoR::gisco_get_nuts(nuts_level = "2", year = "2021",
+                                resolution = "10") |>
+    sf::st_transform(3035)
+  areas <- tibble::tibble(NUTS_ID = n21$NUTS_ID,
+                          area    = as.numeric(sf::st_area(n21)))
+  split_rows <- purrr::map_dfr(splits, function(s) {
+    tot <- sum(v$RE_Total_TWh[v$NUTS_ID %in% s$old], na.rm = TRUE)
+    areas |>
+      dplyr::filter(NUTS_ID %in% s$new) |>
+      dplyr::transmute(Country_ID   = substr(NUTS_ID, 1, 2),
+                       NUTS_ID,
+                       RE_Total_TWh = tot * area / sum(area))
+  })
+  v <- v |>
+    dplyr::filter(!NUTS_ID %in% unlist(lapply(splits, `[[`, "old"))) |>
+    dplyr::bind_rows(split_rows)
+
+  v |>
     dplyr::transmute(
       Country_CD   = Country_ID,
       Country_Name = NA_character_,
-      NUTS_ID      = nuts2_code,
+      NUTS_ID      = NUTS_ID,
       NUTS_Name    = NA_character_,
       Sector_CD    = NA_character_,
       Sector_ID    = NA_character_,
       Component    = "Vulnerability",
-      Dimension    = "Diversification",
+      Dimension    = "Energy",
       Variable     = "RE_Potential",
       Unit         = "TWh (technical potential, medium scenario)",
       Value        = round(RE_Total_TWh, 4),
@@ -978,7 +1015,9 @@ create_cohesion_fund <- function(base_data_path) {
 #' EU-27 NUTS-2 coverage: (Country_CD, NUTS_ID, Year, Value).
 .fetch_nuts2_latest <- function(id, filters, base_data_path,
                                 year_col = "time", value_col = "values",
-                                max_years_back = 5L) {
+                                max_years_back = 5L,
+                                agg = c("mean", "sum")) {
+  agg <- match.arg(agg)
 
   this_yr <- as.integer(format(Sys.Date(), "%Y"))
   raw <- restatapi::get_eurostat_data(
@@ -989,8 +1028,29 @@ create_cohesion_fund <- function(base_data_path) {
   ) |>
     tibble::as_tibble() |>
     dplyr::mutate(geo = as.character(geo),
-                  values = as.numeric(values),
-                  country = substr(geo, 1, 2))
+                  values = as.numeric(values))
+
+  # Recode NUTS-2024 geographies onto the pipeline grid BEFORE the grid
+  # filter. Eurostat vintages from 2024 on arrive in NUTS-2024 codes
+  # (Utrecht NL31->NL35, Zuid-Holland NL33->NL36; Portugal PT16/17/18 split
+  # into PT19/PT1A-PT1D); the old `geo %in% base_d` filter silently dropped
+  # them, so those regions were written as missing and country-median-imputed
+  # downstream (bug found 2026-07-09). Merged codes are aggregated with the
+  # indicator's rule: mean for intensive (labour rates), sum for extensive
+  # (GFCF), mirroring `agg_rules`.
+  nuts24_to_grid <- c(NL35 = "NL31", NL36 = "NL33",
+                      PT19 = "PT16", PT1D = "PT16",
+                      PT1A = "PT17", PT1B = "PT17", PT1C = "PT18")
+  agg_fun <- if (agg == "sum") {
+    function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
+  } else {
+    function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+  }
+  raw <- raw |>
+    dplyr::mutate(geo = dplyr::coalesce(nuts24_to_grid[geo], geo)) |>
+    dplyr::group_by(geo, time) |>
+    dplyr::summarise(values = agg_fun(values), .groups = "drop") |>
+    dplyr::mutate(country = substr(geo, 1, 2))
 
   # NUTS-2 only, EU-27
   base_d <- readxl::read_xlsx(base_data_path) |>
@@ -1011,6 +1071,26 @@ create_cohesion_fund <- function(base_data_path) {
     dplyr::transmute(Country_CD = country, NUTS_ID = geo,
                      Year = pick$year, Value = values)
 
+  # Per-cell fallback (METHODOLOGY §4): a region missing/NA in the picked
+  # year keeps its most recent earlier non-NA value within the window
+  # (e.g. DEB2 unemployment, PL43). Previously implemented only in
+  # create_employment_weights — closed here 2026-07-09.
+  filled <- out |> dplyr::filter(!is.na(Value)) |> dplyr::pull(NUTS_ID)
+  gaps <- setdiff(intersect(base_d, unique(df$geo)), filled)
+  if (length(gaps) > 0) {
+    fb <- df |>
+      dplyr::filter(geo %in% gaps, !is.na(values)) |>
+      dplyr::mutate(.year = as.integer(as.character(time))) |>
+      dplyr::group_by(geo) |>
+      dplyr::slice_max(.year, n = 1, with_ties = FALSE) |>
+      dplyr::ungroup() |>
+      dplyr::transmute(Country_CD = country, NUTS_ID = geo,
+                       Year = .year, Value = values)
+    out <- out |> dplyr::filter(!NUTS_ID %in% fb$NUTS_ID) |>
+      dplyr::bind_rows(fb)
+    attr(out, "cell_year_fallback") <- fb$NUTS_ID
+  }
+
   attr(out, "year_selected") <- pick$year
   attr(out, "year_coverage") <- pick$coverage
   attr(out, "missing_geos")  <- pick$missing_geos
@@ -1026,7 +1106,8 @@ create_gfcf <- function(base_data_path) {
   out <- .fetch_nuts2_latest(
     id      = "nama_10r_2gfcf",
     filters = list(nace_r2 = "C", sector = "S1", currency = "MIO_EUR"),
-    base_data_path = base_data_path
+    base_data_path = base_data_path,
+    agg     = "sum"   # extensive (MIO_EUR): merged PT codes are summed
   )
 
   result <- out |>
@@ -1497,6 +1578,116 @@ create_berd <- function(base_data_path, empl_weights) {
 
   attr(result, "year_selected") <- pick$year
   attr(result, "source_dataset") <- "rd_e_berdindr2"
+  result
+}
+
+
+#' Regional business R&D intensity = genuinely-regional R&D-capacity indicator
+#' from `rd_e_gerdreg` (sectperf = BES, R&D as % of regional GDP, NUTS-2),
+#' replicated across the manufacturing sectors. SUPERSEDES `create_berd()`.
+#'
+#' Why: the old `create_berd()` (national BERD-by-NACE downscaled by employment,
+#' then divided by employment in `04_normalize.R`) reduces algebraically to a
+#' country x sector constant — the downscale weight and the per-employee divisor
+#' cancel — so it carried NO within-country regional variation. The regional-
+#' resilience literature measures the innovation / adaptive-capacity channel with
+#' NUTS-2 R&D and patents (Bristow & Healy 2018; Filippetti et al. 2020; Toth et
+#' al. 2020; Rocchetta et al. 2021; Panori 2025); `rd_e_gerdreg` gives genuine
+#' regional business-R&D intensity. See LITERATURE_GATHERED.md section H.
+#'
+#' Kept under the Indicator name "BERD" so the Technology dimension, the reversed
+#' orientation (higher R&D -> lower vulnerability) and harmonisation are unchanged.
+#' Because it is now an INTENSITY (% of GDP), "BERD" is removed from the
+#' per-employee list in `R/04_normalize.R`.
+#'
+#' NB Eurostat codes (sectperf = "BES", unit = "PC_GDP") follow the standard R&D
+#' classification; confirm on the first networked run (the sandbox used for
+#' development had no Eurostat egress).
+#'
+#' @param empl_weights tibble (Country_ID, NUTS_ID, Sector_ID, weight) — supplies
+#'   the (region x sector) grid the region-level value is replicated across.
+#' @return tibble (Country_ID, NUTS_ID, Sector_ID, Indicator, Unit, Value)
+create_regional_berd <- function(empl_weights) {
+
+  this_yr <- as.integer(format(Sys.Date(), "%Y"))
+  raw <- restatapi::get_eurostat_data(
+    id          = "rd_e_gerdreg",
+    filters     = list(sectperf = "BES", unit = "PC_GDP"),
+    date_filter = seq(this_yr - 6L, this_yr),
+    exact_match = TRUE, label = FALSE
+  ) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(geo = as.character(geo), values = as.numeric(values))
+
+  # NUTS-2 geographies only (4-char codes within the EU-27).
+  reg <- raw |>
+    dplyr::filter(nchar(geo) == 4, substr(geo, 1, 2) %in% eu27)
+
+  pick <- pick_latest_complete_year(
+    reg, geo_dim = "geo", value_col = "values",
+    expected_geos = sort(unique(empl_weights$NUTS_ID)), max_years_back = 6L
+  )
+
+  rd_region <- reg |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::filter(.year == pick$year) |>
+    dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
+
+  # Fallback chain for regions absent in the picked year (found 2026-07-03:
+  # PT16-18/PL43/PL62 publish only earlier years; Belgium publishes BES PC_GDP
+  # at NUTS-1 only; the Netherlands only nationally). BERD is an intensity
+  # (% of GDP), so replicating a coarser geography is the same §5 rule used
+  # for other intensive indicators (and mirrors the QoG NUTS-1 handling).
+  #   (i)  per-cell latest non-NA year within the window (§4 fallback);
+  #   (ii) NUTS-1 parent value, replicated;
+  #   (iii) national value, replicated.
+  expected <- sort(unique(empl_weights$NUTS_ID))
+  latest_of <- function(df) df |>
+    dplyr::filter(!is.na(values)) |>
+    dplyr::mutate(.year = as.integer(as.character(time))) |>
+    dplyr::group_by(geo) |>
+    dplyr::slice_max(.year, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup()
+
+  miss1 <- setdiff(expected, rd_region$NUTS_ID[!is.na(rd_region$rd_pc_gdp)])
+  fb_cell <- latest_of(reg |> dplyr::filter(geo %in% miss1)) |>
+    dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
+
+  miss2 <- setdiff(miss1, fb_cell$NUTS_ID)
+  n1 <- latest_of(raw |> dplyr::filter(nchar(geo) == 3,
+                                       substr(geo, 1, 2) %in% eu27)) |>
+    dplyr::transmute(n1 = geo, rd_pc_gdp = values)
+  fb_n1 <- tibble::tibble(NUTS_ID = miss2, n1 = substr(miss2, 1, 3)) |>
+    dplyr::inner_join(n1, by = "n1") |>
+    dplyr::select(NUTS_ID, rd_pc_gdp)
+
+  miss3 <- setdiff(miss2, fb_n1$NUTS_ID)
+  n0 <- latest_of(raw |> dplyr::filter(nchar(geo) == 2, geo %in% eu27)) |>
+    dplyr::transmute(n0 = geo, rd_pc_gdp = values)
+  fb_n0 <- tibble::tibble(NUTS_ID = miss3, n0 = substr(miss3, 1, 2)) |>
+    dplyr::inner_join(n0, by = "n0") |>
+    dplyr::select(NUTS_ID, rd_pc_gdp)
+
+  rd_region <- rd_region |>
+    dplyr::filter(!is.na(rd_pc_gdp)) |>
+    dplyr::bind_rows(fb_cell, fb_n1, fb_n0)
+
+  # Replicate the region-level value across the (Country x NUTS x Sector) grid.
+  result <- empl_weights |>
+    dplyr::distinct(Country_ID, NUTS_ID, Sector_ID) |>
+    dplyr::left_join(rd_region, by = "NUTS_ID") |>
+    dplyr::transmute(
+      Country_ID, NUTS_ID, Sector_ID,
+      Indicator = "BERD",
+      Unit      = "R&D, % of regional GDP",
+      Value     = round(rd_pc_gdp, 4)
+    ) |>
+    tibble::as_tibble()
+
+  attr(result, "year_selected")  <- pick$year
+  attr(result, "source_dataset") <- "rd_e_gerdreg (sectperf=BES, PC_GDP)"
+  attr(result, "fallbacks") <- list(cell_year = fb_cell$NUTS_ID,
+                                    nuts1 = fb_n1$NUTS_ID, nuts0 = fb_n0$NUTS_ID)
   result
 }
 

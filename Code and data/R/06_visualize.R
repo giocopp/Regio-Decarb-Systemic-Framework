@@ -1,6 +1,6 @@
 # ── 06_visualize.R ── Maps and radar charts for TRI results ───────
 # Produces Figures 3-6 for the paper
-# Input:  risk_data tibble (from 05_aggregate), output directory path
+# Input:  risk_data tibble (from build_risk_data, R/exposure.R), output dir
 # Output: PNG files saved to output_dir; returns character vector of file paths
 
 
@@ -63,11 +63,15 @@
 
   clip_bb <- .clip_bbox()
 
+  # Recombine Croatia to the index grid (HR02+HR05+HR06 -> HR04, mirroring
+  # 03_reshape.R) — the giscoR layer is NUTS-2021, the data carry HR04.
   nuts2_sf <- nuts2_raw |>
     dplyr::filter(
       CNTR_CODE %in% eu_codes,
       !substr(NUTS_ID, 1, 3) %in% c("FRY", "ES7", "PT2")
     ) |>
+    dplyr::mutate(NUTS_ID = ifelse(NUTS_ID %in% c("HR02", "HR05", "HR06"),
+                                   "HR04", NUTS_ID)) |>
     dplyr::group_by(NUTS_ID) |>
     dplyr::summarise(geometry = sf::st_union(geometry), .groups = "drop") |>
     sf::st_make_valid()
@@ -95,7 +99,7 @@
 
 #' Create TRI maps (Figures 3 and 4)
 #'
-#' @param risk_data Tibble from aggregate_risk()
+#' @param risk_data Tibble from build_risk_data()
 #' @param output_dir Character path for saving PNGs
 #' @return Character vector of saved file paths (invisibly)
 plot_tri_maps <- function(risk_data, output_dir,
@@ -163,15 +167,14 @@ plot_tri_maps <- function(risk_data, output_dir,
     saved <- c(saved, outfile)
   }
 
-  # ── Figure 4: 6 vulnerability dimension panels ─────────────────
+  # ── Figure 4: vulnerability dimension panels (4 dims since 2026-07-03) ──
   vuln_dims <- c(
-    Energy          = "Vuln_Energy",
-    Labour          = "Vuln_Labour",
-    `Supply Chain`  = "Vuln_Supply_Chain",
-    Technology      = "Vuln_Technology",
-    Institutions    = "Vuln_Institutions",
-    Diversification = "Vuln_Diversification"
+    Energy       = "Vuln_Energy",
+    Labour       = "Vuln_Labour",
+    Technology   = "Vuln_Technology",
+    Institutions = "Vuln_Institutions"
   )
+  vuln_dims <- vuln_dims[vuln_dims %in% names(mapping_sf)]
 
   pal_dim <- RColorBrewer::brewer.pal(6, "Blues")
 
@@ -185,7 +188,7 @@ plot_tri_maps <- function(risk_data, output_dir,
                   vuln_dims[[dim_lab]], dim_lab, pal_dim)
     })
 
-    panel <- patchwork::wrap_plots(dim_maps, ncol = 4) +
+    panel <- patchwork::wrap_plots(dim_maps, ncol = 3) +
       patchwork::plot_annotation(
         title = paste("Vulnerability Dimensions \u2013", s),
         theme = ggplot2::theme(
@@ -263,7 +266,7 @@ plot_tri_maps <- function(risk_data, output_dir,
 
 #' Create radar charts (Figures 5 and 6)
 #'
-#' @param risk_data Tibble from aggregate_risk()
+#' @param risk_data Tibble from build_risk_data()
 #' @param output_dir Character path for saving PNGs
 #' @return Character vector of saved file paths (invisibly)
 plot_radar_charts <- function(risk_data, output_dir,
@@ -275,15 +278,13 @@ plot_radar_charts <- function(risk_data, output_dir,
 
   radar_vars <- c(
     "Exposure",
-    "Vuln_Energy", "Vuln_Labour", "Vuln_Supply_Chain",
-    "Vuln_Technology", "Vuln_Institutions",
-    "Vuln_Diversification"
+    "Vuln_Energy", "Vuln_Labour",
+    "Vuln_Technology", "Vuln_Institutions"
   )
   radar_labels <- c(
     "Exposure",
-    "Energy", "Labour", "Supply Chain",
-    "Technology", "Institutions",
-    "Diversification"
+    "Energy", "Labour",
+    "Technology", "Institutions"
   )
 
   region_cols <- rep(c("firebrick", "darkolivegreen4"), length(countries))
@@ -317,4 +318,53 @@ plot_radar_charts <- function(risk_data, output_dir,
   }
 
   invisible(saved)
+}
+
+
+#' Headline Risk-index three-panel map (Total Manufacturing):
+#' Exposure | Vulnerability | Risk
+#'
+#' @param risk_data Tibble from build_risk_data()
+#' @param output_dir Character path for saving the PNG
+#' @return Path of the saved file
+plot_risk_maps <- function(risk_data, output_dir) {
+
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  layers <- .get_map_layers()
+
+  C_rows <- risk_data |>
+    dplyr::filter(Sector_ID == "C") |>
+    dplyr::mutate(Exposure = ifelse(Exposure == 0, NA_real_, Exposure))
+  mC <- layers$nuts2 |>
+    dplyr::left_join(C_rows, by = "NUTS_ID") |>
+    sf::st_transform(.crs_lambert)
+
+  ttl <- function(t) list(
+    ggplot2::ggtitle(t),
+    ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5,
+                                                      face = "bold"))
+  )
+  p1 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Exposure",
+                    "Exposure", RColorBrewer::brewer.pal(7, "Purples")) +
+    ttl("Exposure")
+  p2 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Vulnerability",
+                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues")) +
+    ttl("Vulnerability")
+  p3 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Risk_norm",
+                    "Risk", RColorBrewer::brewer.pal(7, "Reds")) +
+    ttl("Risk")
+
+  combo <- (p1 | p2 | p3) + patchwork::plot_annotation(
+    title = paste("Total Manufacturing - Risk index",
+                  "(covered carbon: geocoded ETS + CBAM)"),
+    theme = ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 14, face = "bold",
+                                         hjust = 0.5))
+  )
+
+  outfile <- file.path(output_dir,
+                       "Figure_risk_total_manufacturing.png")
+  ggplot2::ggsave(outfile, combo, width = 14, height = 5, dpi = 600,
+                  bg = "white")
+  outfile
 }

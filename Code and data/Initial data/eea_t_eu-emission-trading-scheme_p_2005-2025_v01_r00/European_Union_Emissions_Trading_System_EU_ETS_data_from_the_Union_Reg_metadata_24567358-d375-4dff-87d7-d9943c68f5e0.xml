@@ -1,0 +1,985 @@
+<mdb:MD_Metadata xmlns:mdb="http://standards.iso.org/iso/19115/-3/mdb/2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cat="http://standards.iso.org/iso/19115/-3/cat/1.0" xmlns:gfc="http://standards.iso.org/iso/19110/gfc/1.1" xmlns:cit="http://standards.iso.org/iso/19115/-3/cit/2.0" xmlns:gcx="http://standards.iso.org/iso/19115/-3/gcx/1.0" xmlns:gex="http://standards.iso.org/iso/19115/-3/gex/1.0" xmlns:lan="http://standards.iso.org/iso/19115/-3/lan/1.0" xmlns:srv="http://standards.iso.org/iso/19115/-3/srv/2.0" xmlns:mas="http://standards.iso.org/iso/19115/-3/mas/1.0" xmlns:mcc="http://standards.iso.org/iso/19115/-3/mcc/1.0" xmlns:mco="http://standards.iso.org/iso/19115/-3/mco/1.0" xmlns:mda="http://standards.iso.org/iso/19115/-3/mda/1.0" xmlns:mds="http://standards.iso.org/iso/19115/-3/mds/2.0" xmlns:mdt="http://standards.iso.org/iso/19115/-3/mdt/2.0" xmlns:mex="http://standards.iso.org/iso/19115/-3/mex/1.0" xmlns:mmi="http://standards.iso.org/iso/19115/-3/mmi/1.0" xmlns:mpc="http://standards.iso.org/iso/19115/-3/mpc/1.0" xmlns:mrc="http://standards.iso.org/iso/19115/-3/mrc/2.0" xmlns:mrd="http://standards.iso.org/iso/19115/-3/mrd/1.0" xmlns:mri="http://standards.iso.org/iso/19115/-3/mri/1.0" xmlns:mrl="http://standards.iso.org/iso/19115/-3/mrl/2.0" xmlns:mrs="http://standards.iso.org/iso/19115/-3/mrs/1.0" xmlns:msr="http://standards.iso.org/iso/19115/-3/msr/2.0" xmlns:mdq="http://standards.iso.org/iso/19157/-2/mdq/1.0" xmlns:dqm="http://standards.iso.org/iso/19157/-2/dqm/1.0" xmlns:mac="http://standards.iso.org/iso/19115/-3/mac/2.0" xmlns:gco="http://standards.iso.org/iso/19115/-3/gco/1.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <mdb:metadataIdentifier>
+    <mcc:MD_Identifier>
+      <mcc:code>
+        <gco:CharacterString>24567358-d375-4dff-87d7-d9943c68f5e0</gco:CharacterString>
+      </mcc:code>
+    </mcc:MD_Identifier>
+  </mdb:metadataIdentifier>
+  <mdb:defaultLocale>
+    <lan:PT_Locale id="EN">
+      <lan:language>
+        <lan:LanguageCode codeList="http://www.loc.gov/standards/iso639-2/" codeListValue="eng" />
+      </lan:language>
+      <lan:characterEncoding>
+        <lan:MD_CharacterSetCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_CharacterSetCode" codeListValue="utf8" />
+      </lan:characterEncoding>
+    </lan:PT_Locale>
+  </mdb:defaultLocale>
+  <mdb:metadataScope>
+    <mdb:MD_MetadataScope>
+      <mdb:resourceScope>
+        <mcc:MD_ScopeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_ScopeCode" codeListValue="nonGeographicDataset" />
+      </mdb:resourceScope>
+      <mdb:name>
+        <gco:CharacterString>Tabular dataset</gco:CharacterString>
+      </mdb:name>
+    </mdb:MD_MetadataScope>
+  </mdb:metadataScope>
+  <mdb:contact>
+    <cit:CI_Responsibility>
+      <cit:role>
+        <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="pointOfContact" />
+      </cit:role>
+      <cit:party>
+        <cit:CI_Organisation>
+          <cit:name>
+            <gco:CharacterString>European Environment Agency</gco:CharacterString>
+          </cit:name>
+          <cit:contactInfo>
+            <cit:CI_Contact>
+              <cit:address>
+                <cit:CI_Address>
+                  <cit:deliveryPoint>
+                    <gco:CharacterString>Kongens Nytorv 6</gco:CharacterString>
+                  </cit:deliveryPoint>
+                  <cit:city>
+                    <gco:CharacterString>Copenhagen</gco:CharacterString>
+                  </cit:city>
+                  <cit:administrativeArea>
+                    <gco:CharacterString>K</gco:CharacterString>
+                  </cit:administrativeArea>
+                  <cit:postalCode>
+                    <gco:CharacterString>1050</gco:CharacterString>
+                  </cit:postalCode>
+                  <cit:country>
+                    <gco:CharacterString>Denmark</gco:CharacterString>
+                  </cit:country>
+                  <cit:electronicMailAddress>
+                    <gco:CharacterString>sdi@eea.europa.eu</gco:CharacterString>
+                  </cit:electronicMailAddress>
+                </cit:CI_Address>
+              </cit:address>
+            </cit:CI_Contact>
+          </cit:contactInfo>
+        </cit:CI_Organisation>
+      </cit:party>
+    </cit:CI_Responsibility>
+  </mdb:contact>
+  <mdb:dateInfo>
+    <cit:CI_Date>
+      <cit:date>
+        <gco:DateTime>2026-04-16T07:44:05.662862Z</gco:DateTime>
+      </cit:date>
+      <cit:dateType>
+        <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="creation" />
+      </cit:dateType>
+    </cit:CI_Date>
+  </mdb:dateInfo>
+  <mdb:dateInfo>
+    <cit:CI_Date>
+      <cit:date>
+        <gco:DateTime>2026-04-16T14:09:05.759995Z</gco:DateTime>
+      </cit:date>
+      <cit:dateType>
+        <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="revision" />
+      </cit:dateType>
+    </cit:CI_Date>
+  </mdb:dateInfo>
+  <mdb:metadataStandard>
+    <cit:CI_Citation>
+      <cit:title>
+        <gco:CharacterString>ISO 19115-3:2018</gco:CharacterString>
+      </cit:title>
+      <cit:edition>
+        <gco:CharacterString>1.0</gco:CharacterString>
+      </cit:edition>
+    </cit:CI_Citation>
+  </mdb:metadataStandard>
+  <mdb:metadataLinkage>
+    <cit:CI_OnlineResource>
+      <cit:linkage>
+        <gco:CharacterString>https://sdi.eea.europa.eu/catalogue/srv/api/records/24567358-d375-4dff-87d7-d9943c68f5e0?language=all</gco:CharacterString>
+      </cit:linkage>
+      <cit:function>
+        <cit:CI_OnLineFunctionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_OnLineFunctionCode" codeListValue="completeMetadata" />
+      </cit:function>
+    </cit:CI_OnlineResource>
+  </mdb:metadataLinkage>
+  <mdb:identificationInfo>
+    <mri:MD_DataIdentification>
+      <mri:citation>
+        <cit:CI_Citation>
+          <cit:title>
+            <gco:CharacterString>European Union Emissions Trading System (EU ETS) data from the Union Registry, Apr. 2026</gco:CharacterString>
+          </cit:title>
+          <cit:date>
+            <cit:CI_Date>
+              <cit:date>
+                <gco:DateTime>2026-04-01T12:24:36+00:00</gco:DateTime>
+              </cit:date>
+              <cit:dateType>
+                <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="creation" />
+              </cit:dateType>
+            </cit:CI_Date>
+          </cit:date>
+          <cit:date>
+            <cit:CI_Date>
+              <cit:date>
+                <gco:DateTime>2026-04-16T12:24:36+00:00</gco:DateTime>
+              </cit:date>
+              <cit:dateType>
+                <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+              </cit:dateType>
+            </cit:CI_Date>
+          </cit:date>
+          <cit:edition>
+            <gco:CharacterString>01.00</gco:CharacterString>
+          </cit:edition>
+          <cit:identifier>
+            <mcc:MD_Identifier>
+              <mcc:code>
+                <gco:CharacterString>eea_t_eu-emission-trading-scheme_p_2005-2025_v01_r00</gco:CharacterString>
+              </mcc:code>
+            </mcc:MD_Identifier>
+          </cit:identifier>
+          <cit:identifier>
+            <mcc:MD_Identifier>
+              <mcc:code>
+                <gco:CharacterString>european-union-emissions-trading-scheme-17</gco:CharacterString>
+              </mcc:code>
+            </mcc:MD_Identifier>
+          </cit:identifier>
+          <cit:identifier>
+            <mcc:MD_Identifier>
+              <mcc:code>
+                <gco:CharacterString>DAT-21-en</gco:CharacterString>
+              </mcc:code>
+            </mcc:MD_Identifier>
+          </cit:identifier>
+        </cit:CI_Citation>
+      </mri:citation>
+      <mri:abstract>
+        <gco:CharacterString>This is the metadata for the EU Emission Trading System (EU ETS). EU ETS aims to reduce greenhouse gas emissions cost-effectively by setting a cap on the total amount of emissions from covered sectors. These sectors include power and heat generation, energy-intensive industries aviation and shipping within the European Economic Area. Under the system, companies receive or purchase emission allowances, each permitting the release of one tonne of CO₂ or equivalent gases. Businesses can trade these allowances, creating a financial incentive to reduce emissions. If a company emits less than its allowance, it can sell the surplus; if it exceeds the cap, it must buy more or face penalties. The cap is reduced annually, ensuring a steady decline in emissions over time. The system has gone through several phases, with the current Phase 4 running from 2021 to 2030. It also supports innovation and investment in low-carbon technologies through dedicated funds. Overall, the EU ETS plays a key role in helping the EU reach its climate neutrality goal by 2050.
+
+Data about the EU emission trading system (ETS). The EU ETS data viewer provides aggregated data on emissions and allowances, by country, sector and year. The data mainly comes from the Union Registry. Additional information on auctioning and scope corrections is included.</gco:CharacterString>
+      </mri:abstract>
+      <mri:pointOfContact>
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="pointOfContact" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>OEKO</gco:CharacterString>
+              </cit:name>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact>
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="pointOfContact" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Environment Agency</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:address>
+                    <cit:CI_Address>
+                      <cit:deliveryPoint>
+                        <gco:CharacterString>Kongens Nytorv 6</gco:CharacterString>
+                      </cit:deliveryPoint>
+                      <cit:city>
+                        <gco:CharacterString>Copenhagen</gco:CharacterString>
+                      </cit:city>
+                      <cit:administrativeArea>
+                        <gco:CharacterString>K</gco:CharacterString>
+                      </cit:administrativeArea>
+                      <cit:postalCode>
+                        <gco:CharacterString>1050</gco:CharacterString>
+                      </cit:postalCode>
+                      <cit:country>
+                        <gco:CharacterString>Denmark</gco:CharacterString>
+                      </cit:country>
+                    </cit:CI_Address>
+                  </cit:address>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact>
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="publisher" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Environment Agency</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:onlineResource>
+                    <cit:CI_OnlineResource>
+                      <cit:linkage>
+                        <gco:CharacterString>http://www.eea.europa.eu#organization</gco:CharacterString>
+                      </cit:linkage>
+                    </cit:CI_OnlineResource>
+                  </cit:onlineResource>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact>
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="processor" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Topic Centre on Climate change mitigation (ETC/CM)</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:onlineResource>
+                    <cit:CI_OnlineResource>
+                      <cit:linkage>
+                        <gco:CharacterString>http://acm.eionet.europa.eu</gco:CharacterString>
+                      </cit:linkage>
+                    </cit:CI_OnlineResource>
+                  </cit:onlineResource>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact gco:nilReason="withheld">
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="principalInvestigator" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Environment Agency</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:address>
+                    <cit:CI_Address>
+                      <cit:electronicMailAddress>
+                        <gco:CharacterString>Liza.Leimane@eea.europa.eu</gco:CharacterString>
+                      </cit:electronicMailAddress>
+                    </cit:CI_Address>
+                  </cit:address>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+              <cit:individual>
+                <cit:CI_Individual>
+                  <cit:name>
+                    <gco:CharacterString>Melanie Sporer</gco:CharacterString>
+                  </cit:name>
+                </cit:CI_Individual>
+              </cit:individual>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact gco:nilReason="withheld">
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="distributor" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Environment Agency</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:address>
+                    <cit:CI_Address>
+                      <cit:electronicMailAddress>
+                        <gco:CharacterString>sdi@eea.europa.eu</gco:CharacterString>
+                      </cit:electronicMailAddress>
+                    </cit:CI_Address>
+                  </cit:address>
+                  <cit:onlineResource>
+                    <cit:CI_OnlineResource>
+                      <cit:linkage gco:nilReason="missing">
+                        <gco:CharacterString />
+                      </cit:linkage>
+                    </cit:CI_OnlineResource>
+                  </cit:onlineResource>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:pointOfContact gco:nilReason="withheld">
+        <cit:CI_Responsibility>
+          <cit:role>
+            <cit:CI_RoleCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_RoleCode" codeListValue="custodian" />
+          </cit:role>
+          <cit:party>
+            <cit:CI_Organisation>
+              <cit:name>
+                <gco:CharacterString>European Environment Agency</gco:CharacterString>
+              </cit:name>
+              <cit:contactInfo>
+                <cit:CI_Contact>
+                  <cit:address>
+                    <cit:CI_Address>
+                      <cit:electronicMailAddress>
+                        <gco:CharacterString>sdi@eea.europa.eu</gco:CharacterString>
+                      </cit:electronicMailAddress>
+                    </cit:CI_Address>
+                  </cit:address>
+                  <cit:onlineResource>
+                    <cit:CI_OnlineResource>
+                      <cit:linkage gco:nilReason="missing">
+                        <gco:CharacterString />
+                      </cit:linkage>
+                    </cit:CI_OnlineResource>
+                  </cit:onlineResource>
+                </cit:CI_Contact>
+              </cit:contactInfo>
+            </cit:CI_Organisation>
+          </cit:party>
+        </cit:CI_Responsibility>
+      </mri:pointOfContact>
+      <mri:spatialResolution>
+        <mri:MD_Resolution>
+          <mri:distance>
+            <gco:Distance uom="m" />
+          </mri:distance>
+        </mri:MD_Resolution>
+      </mri:spatialResolution>
+      <mri:topicCategory>
+        <mri:MD_TopicCategoryCode>environment</mri:MD_TopicCategoryCode>
+      </mri:topicCategory>
+      <mri:extent>
+        <gex:EX_Extent>
+          <gex:temporalElement>
+            <gex:EX_TemporalExtent>
+              <gex:extent>
+                <gml:TimePeriod gml:id="d17964e856a1052958">
+                  <gml:beginPosition>2005-01-01</gml:beginPosition>
+                  <gml:endPosition>2025-12-31</gml:endPosition>
+                </gml:TimePeriod>
+              </gex:extent>
+            </gex:EX_TemporalExtent>
+          </gex:temporalElement>
+        </gex:EX_Extent>
+      </mri:extent>
+      <mri:resourceMaintenance>
+        <mmi:MD_MaintenanceInformation>
+          <mmi:maintenanceAndUpdateFrequency>
+            <mmi:MD_MaintenanceFrequencyCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_MaintenanceFrequencyCode" codeListValue="annually" />
+          </mmi:maintenanceAndUpdateFrequency>
+        </mmi:MD_MaintenanceInformation>
+      </mri:resourceMaintenance>
+      <mri:graphicOverview>
+        <mcc:MD_BrowseGraphic>
+          <mcc:fileName>
+            <gco:CharacterString>https://sdi.eea.europa.eu/catalogue/api/records/24567358-d375-4dff-87d7-d9943c68f5e0/attachments/thumbnail.jpg</gco:CharacterString>
+          </mcc:fileName>
+        </mcc:MD_BrowseGraphic>
+      </mri:graphicOverview>
+      <mri:descriptiveKeywords>
+        <mri:MD_Keywords>
+          <mri:keyword gco:nilReason="missing">
+            <gco:CharacterString />
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="theme" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="https://rod.eionet.europa.eu/obligations">Reporting obligations</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2023-02-06</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/external.theme.rod-eionet-europa-eu">geonetwork.thesaurus.external.theme.rod-eionet-europa-eu</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords>
+        <mri:MD_Keywords>
+          <mri:keyword gco:nilReason="missing">
+            <gco:CharacterString />
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="theme" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="https://applications.eea.europa.eu/ManagementPlan/default.aspx#">EEA Management Plan</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2023-05-31</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2021-08-25</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/local.theme.eea-mp">geonetwork.thesaurus.local.theme.eea-mp</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords>
+        <mri:MD_Keywords>
+          <mri:keyword>
+            <gcx:Anchor xlink:href="https://www.eea.europa.eu/themes#term14">Energy</gcx:Anchor>
+          </mri:keyword>
+          <mri:keyword>
+            <gcx:Anchor xlink:href="https://www.eea.europa.eu/themes#term22">Industry</gcx:Anchor>
+          </mri:keyword>
+          <mri:keyword>
+            <gcx:Anchor xlink:href="https://www.eea.europa.eu/themes#term11">Climate mitigation</gcx:Anchor>
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="theme" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="https://www.eea.europa.eu/themes">EEA topics</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2022-10-18</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2020-09-24</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/external.theme.eea-topics">geonetwork.thesaurus.external.theme.eea-topics</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords gco:nilReason="withheld">
+        <mri:MD_Keywords />
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords gco:nilReason="withheld">
+        <mri:MD_Keywords />
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords>
+        <mri:MD_Keywords>
+          <mri:keyword>
+            <gcx:Anchor xlink:href="http://www.eionet.europa.eu/gemet/concept/15097">climate policy</gcx:Anchor>
+          </mri:keyword>
+          <mri:keyword>
+            <gcx:Anchor xlink:href="http://www.eionet.europa.eu/gemet/theme/7">climate</gcx:Anchor>
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="theme" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="http://geonetwork-opensource.org/gemet">GEMET</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2021-11-30</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/external.theme.gemet">geonetwork.thesaurus.external.theme.gemet</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords>
+        <mri:MD_Keywords>
+          <mri:keyword>
+            <gco:CharacterString>Lithuania</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Romania</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Netherlands</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Malta</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Sweden</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Estonia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Germany</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Norway</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Luxembourg</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Italy</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Greece</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Austria</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Bulgaria</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Portugal</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Poland</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Slovenia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Liechtenstein</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Ireland</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Finland</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Croatia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Slovakia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Czechia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Denmark</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Cyprus</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Iceland</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Hungary</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Latvia</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Spain</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>France</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Northern Ireland</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>Belgium</gco:CharacterString>
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="place" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="http://geonetwork-opensource.org/thesaurus/naturalearth-and-seavox">Continents, countries, sea regions of the world.</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:DateTime>2015-07-17T12:00:00</gco:DateTime>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2015-07-17</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/external.place.regions">geonetwork.thesaurus.external.place.regions</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords gco:nilReason="withheld">
+        <mri:MD_Keywords>
+          <mri:keyword>
+            <gco:CharacterString>tabular data</gco:CharacterString>
+          </mri:keyword>
+          <mri:type>
+            <mri:MD_KeywordTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_KeywordTypeCode" codeListValue="theme" />
+          </mri:type>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gcx:Anchor xlink:href="https://www.eea.europa.eu/tags">EEA categories</gcx:Anchor>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2025-10-09</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+              <cit:identifier>
+                <mcc:MD_Identifier>
+                  <mcc:code>
+                    <gcx:Anchor xlink:href="https://sdi.eea.europa.eu/catalogue/srv/api/registries/vocabularies/local.theme.eea-categories">geonetwork.thesaurus.local.theme.eea-categories</gcx:Anchor>
+                  </mcc:code>
+                </mcc:MD_Identifier>
+              </cit:identifier>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:descriptiveKeywords gco:nilReason="withheld">
+        <mri:MD_Keywords>
+          <mri:keyword>
+            <gco:CharacterString>ets</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>co2</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>emission trading</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>eutl</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>industry</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>greenhouse gas</gco:CharacterString>
+          </mri:keyword>
+          <mri:keyword>
+            <gco:CharacterString>EU ETS</gco:CharacterString>
+          </mri:keyword>
+          <mri:thesaurusName>
+            <cit:CI_Citation>
+              <cit:title>
+                <gco:CharacterString>EEA keyword list</gco:CharacterString>
+              </cit:title>
+              <cit:date>
+                <cit:CI_Date>
+                  <cit:date>
+                    <gco:Date>2002-03-01</gco:Date>
+                  </cit:date>
+                  <cit:dateType>
+                    <cit:CI_DateTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_DateTypeCode" codeListValue="publication" />
+                  </cit:dateType>
+                </cit:CI_Date>
+              </cit:date>
+            </cit:CI_Citation>
+          </mri:thesaurusName>
+        </mri:MD_Keywords>
+      </mri:descriptiveKeywords>
+      <mri:resourceConstraints>
+        <mco:MD_Constraints>
+          <mco:useLimitation>
+            <gco:CharacterString>License CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Copyright holder: European Commission, European Environment Agency (EEA).</gco:CharacterString>
+          </mco:useLimitation>
+        </mco:MD_Constraints>
+      </mri:resourceConstraints>
+      <mri:resourceConstraints>
+        <mco:MD_LegalConstraints>
+          <mco:accessConstraints>
+            <mco:MD_RestrictionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_RestrictionCode" codeListValue="otherRestrictions" />
+          </mco:accessConstraints>
+          <mco:otherConstraints>
+            <gcx:Anchor xlink:href="http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations">No limitations to public access</gcx:Anchor>
+          </mco:otherConstraints>
+        </mco:MD_LegalConstraints>
+      </mri:resourceConstraints>
+      <mri:associatedResource>
+        <mri:MD_AssociatedResource>
+          <mri:associationType>
+            <mri:DS_AssociationTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#DS_AssociationTypeCode" codeListValue="crossReference" />
+          </mri:associationType>
+          <mri:metadataReference xlink:href="../../proxy?url=https%3A%2F%2Fwww.eionet.europa.eu%2Fetcs%2Fetc-cm%2Fproducts%2Fetc-cm-report-2024-09" xlink:title="ETC CM report 2024/09: Trends and projections in the EU ETS in 2024 — Eionet Portal" uuidref="../../proxy?url=https%3A%2F%2Fwww.eionet.europa.eu%2Fetcs%2Fetc-cm%2Fproducts%2Fetc-cm-report-2024-09" />
+        </mri:MD_AssociatedResource>
+      </mri:associatedResource>
+      <mri:associatedResource>
+        <mri:MD_AssociatedResource>
+          <mri:associationType>
+            <mri:DS_AssociationTypeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#DS_AssociationTypeCode" codeListValue="crossReference" />
+          </mri:associationType>
+          <mri:metadataReference xlink:href="https://www.eea.europa.eu/en/analysis/publications/trends-and-projections-in-europe-2024" xlink:title="Trends and projections in Europe 2024 | European Environment Agency&amp;x27;s home page" uuidref="https://www.eea.europa.eu/en/analysis/publications/trends-and-projections-in-europe-2024" />
+        </mri:MD_AssociatedResource>
+      </mri:associatedResource>
+      <mri:defaultLocale>
+        <lan:PT_Locale>
+          <lan:language>
+            <lan:LanguageCode codeList="http://www.loc.gov/standards/iso639-2/" codeListValue="eng" />
+          </lan:language>
+          <lan:characterEncoding gco:nilReason="unknown" />
+        </lan:PT_Locale>
+      </mri:defaultLocale>
+      <mri:supplementalInformation>
+        <gco:CharacterString>The EU Emissions Trading System (ETS) is a central instrument of the EU's policy to fight climate change and achieve cost-efficient reductions of greenhouse gas emissions. It is the world's biggest carbon market.
+
+Related websites:
+https://ec.europa.eu/clima/ets/
+https://climate.ec.europa.eu/eu-action/eu-emissions-trading-system-eu-ets_en</gco:CharacterString>
+      </mri:supplementalInformation>
+    </mri:MD_DataIdentification>
+  </mdb:identificationInfo>
+  <mdb:contentInfo>
+    <mrc:MD_FeatureCatalogueDescription>
+      <mrc:includedWithDataset />
+    </mrc:MD_FeatureCatalogueDescription>
+  </mdb:contentInfo>
+  <mdb:distributionInfo>
+    <mrd:MD_Distribution>
+      <mrd:distributionFormat>
+        <mrd:MD_Format>
+          <mrd:formatSpecificationCitation>
+            <cit:CI_Citation>
+              <cit:title>
+                <gco:CharacterString>ascii (.csv, .txt, .sql)</gco:CharacterString>
+              </cit:title>
+              <cit:date gco:nilReason="unknown" />
+              <cit:edition gco:nilReason="unknown">
+                <gco:CharacterString />
+              </cit:edition>
+            </cit:CI_Citation>
+          </mrd:formatSpecificationCitation>
+        </mrd:MD_Format>
+      </mrd:distributionFormat>
+      <mrd:transferOptions>
+        <mrd:MD_DigitalTransferOptions>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://sdi.eea.europa.eu/webdav/datastore/public/eea_t_eu-emission-trading-scheme_p_2005-2025_v01_r00</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>EEA:FOLDERPATH</gco:CharacterString>
+              </cit:protocol>
+              <cit:function>
+                <cit:CI_OnLineFunctionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_OnLineFunctionCode" codeListValue="download" />
+              </cit:function>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://sdi.eea.europa.eu/data/24567358-d375-4dff-87d7-d9943c68f5e0</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:URL</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>Direct download</gco:CharacterString>
+              </cit:name>
+              <cit:function>
+                <cit:CI_OnLineFunctionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_OnLineFunctionCode" codeListValue="download" />
+              </cit:function>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine gco:nilReason="withheld">
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://taskman.eionet.europa.eu/issues/302519</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:LINK-1.0-http--link</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>EEA Taskman ticket</gco:CharacterString>
+              </cit:name>
+              <cit:function>
+                <cit:CI_OnLineFunctionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_OnLineFunctionCode" codeListValue="information" />
+              </cit:function>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://www.eea.europa.eu/data-and-maps/dashboards/emissions-trading-viewer-1</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:LINK-1.0-http--link</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>EU Emissions Trading System (ETS) data viewer</gco:CharacterString>
+              </cit:name>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://www.eea.europa.eu/en/analysis/indicators/greenhouse-gas-emissions-under-the</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:LINK-1.0-http--link</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>Greenhouse gas emissions under the EU Emissions Trading System</gco:CharacterString>
+              </cit:name>
+              <cit:description>
+                <gco:CharacterString>EEA Indicator</gco:CharacterString>
+              </cit:description>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://www.eea.europa.eu/en/analysis/indicators/use-of-auctioning-revenues-generated</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:LINK-1.0-http--link</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>Use of auctioning revenues generated under the EU Emissions Trading System</gco:CharacterString>
+              </cit:name>
+              <cit:description>
+                <gco:CharacterString>EEA Indicator</gco:CharacterString>
+              </cit:description>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+          <mrd:onLine>
+            <cit:CI_OnlineResource>
+              <cit:linkage>
+                <gco:CharacterString>https://sdi.eea.europa.eu/catalogue/api/records/24567358-d375-4dff-87d7-d9943c68f5e0/attachments/Translation%20of%20activity%20codes%20May%202019.xlsx</gco:CharacterString>
+              </cit:linkage>
+              <cit:protocol>
+                <gco:CharacterString>WWW:LINK</gco:CharacterString>
+              </cit:protocol>
+              <cit:name>
+                <gco:CharacterString>Mapping of activity codes</gco:CharacterString>
+              </cit:name>
+              <cit:function>
+                <cit:CI_OnLineFunctionCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#CI_OnLineFunctionCode" codeListValue="information" />
+              </cit:function>
+            </cit:CI_OnlineResource>
+          </mrd:onLine>
+        </mrd:MD_DigitalTransferOptions>
+      </mrd:transferOptions>
+    </mrd:MD_Distribution>
+  </mdb:distributionInfo>
+  <mdb:resourceLineage>
+    <mrl:LI_Lineage>
+      <mrl:statement>
+        <gco:CharacterString>See EU ETS data viewer manual (under direct download/documents) for methodology.
+
+This data set is mainly based on data downloaded from the Union Registry public website on 9th April 2026. The Union Registry checks and records all transactions taking place within the trading system.
+
+It is run by the European Commission. See: https://ec.europa.eu/clima/ets/ (https://ec.europa.eu/clima/ets/). The data set also includes information on auctions of allowances, compiled from auctioning platforms, as well as EEA estimates of ETS emissions for the period 2005 to 202, to reflect the current scope of the ETS for the fourth trading period (2021-2030).</gco:CharacterString>
+      </mrl:statement>
+      <mrl:scope>
+        <mcc:MD_Scope>
+          <mcc:level>
+            <mcc:MD_ScopeCode codeList="http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml#MD_ScopeCode" codeListValue="dataset" />
+          </mcc:level>
+        </mcc:MD_Scope>
+      </mrl:scope>
+    </mrl:LI_Lineage>
+  </mdb:resourceLineage>
+</mdb:MD_Metadata>

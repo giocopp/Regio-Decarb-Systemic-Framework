@@ -1,9 +1,32 @@
 # 07_sensitivity.R — TRI robustness checks. Each test perturbs one
-# construction choice and reports Spearman rho vs the baseline ranking.
+# construction choice and reports two Spearman columns vs the baseline:
+# rho_pooled (stacked panel) and rho_within_sector (mean of per-sector
+# rho — the honest statistic for within-sector-normalised scores, where
+# stacking inflates pooled agreement). See METHODOLOGY §14.
 
 
 #' Geometric TRI: Risk = E^alpha * V^(1-alpha).
 compute_tri <- function(e, v, a) e^a * v^(1 - a)
+
+
+#' One sensitivity row: pooled + mean within-sector Spearman between two
+#' ranking columns of d (requires a Sector_ID column).
+.sens_row <- function(test, d, col_base, col_alt) {
+  rho_pooled <- cor(d[[col_base]], d[[col_alt]],
+                    use = "pairwise.complete.obs", method = "spearman")
+  rho_within <- d |>
+    dplyr::group_by(Sector_ID) |>
+    dplyr::summarise(
+      rho = suppressWarnings(cor(.data[[col_base]], .data[[col_alt]],
+                                 use = "pairwise.complete.obs",
+                                 method = "spearman")),
+      .groups = "drop"
+    ) |>
+    dplyr::pull(rho)
+  tibble::tibble(test = test,
+                 rho_pooled = round(rho_pooled, 4),
+                 rho_within_sector = round(mean(rho_within, na.rm = TRUE), 4))
+}
 
 
 #' Run the sensitivity battery. With `edgar_scope1` supplied, appends the
@@ -19,7 +42,6 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
   message("Vulnerability dimensions: ", paste(vuln_cols, collapse = ", "))
 
   # ───────────────────────────────────────────────
-
   # A. ALPHA SENSITIVITY
   # ───────────────────────────────────────────────
   alpha_grid <- c(0.30, 0.40, 0.50, 0.60, 0.70)
@@ -31,11 +53,7 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
       dplyr::mutate(Risk_sa_norm = range01(Risk_sa)) |>
       dplyr::ungroup()
 
-    rho <- cor(d$Risk_norm_baseline, d$Risk_sa_norm,
-               use = "pairwise.complete.obs", method = "spearman")
-
-    tibble::tibble(test = paste0("Alpha = ", a),
-                   spearman_rho = round(rho, 4))
+    .sens_row(paste0("Alpha = ", a), d, "Risk_norm_baseline", "Risk_sa_norm")
   })
 
   # ───────────────────────────────────────────────
@@ -74,11 +92,7 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
     dplyr::mutate(Risk_PCA_norm = range01(Risk_PCA)) |>
     dplyr::ungroup()
 
-  rho_pca <- cor(pca_result$Risk_norm, pca_result$Risk_PCA_norm,
-                 use = "pairwise.complete.obs", method = "spearman")
-
-  pca_row <- tibble::tibble(test = "PCA weights",
-                            spearman_rho = round(rho_pca, 4))
+  pca_row <- .sens_row("PCA weights", pca_result, "Risk_norm", "Risk_PCA_norm")
 
   # ───────────────────────────────────────────────
   # C. LEAVE-ONE-DIMENSION-OUT
@@ -103,11 +117,7 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
       dplyr::mutate(Risk_LOO_norm = range01(Risk_LOO)) |>
       dplyr::ungroup()
 
-    rho <- cor(d$Risk_norm, d$Risk_LOO_norm,
-               use = "pairwise.complete.obs", method = "spearman")
-
-    tibble::tibble(test = paste0("Drop ", drop_col),
-                   spearman_rho = round(rho, 4))
+    .sens_row(paste0("Drop ", drop_col), d, "Risk_norm", "Risk_LOO_norm")
   })
 
   # ───────────────────────────────────────────────
@@ -122,17 +132,15 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
     dplyr::mutate(Risk_arith_norm = range01(Risk_arith)) |>
     dplyr::ungroup()
 
-  rho_agg <- cor(arith$Risk_norm, arith$Risk_arith_norm,
-                 use = "pairwise.complete.obs", method = "spearman")
-
-  agg_row <- tibble::tibble(test = "Arithmetic mean",
-                            spearman_rho = round(rho_agg, 4))
+  agg_row <- .sens_row("Arithmetic mean", arith, "Risk_norm", "Risk_arith_norm")
 
   # ───────────────────────────────────────────────
   # E. Z-SCORE NORMALIZATION
   # ───────────────────────────────────────────────
   zscore <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
 
+  # preserve_zeros = FALSE: on the z-score scale 0 is the group mean, not a
+  # true zero, so the range01 zero-preservation rule must not fire here.
   z_data <- risk_data |>
     dplyr::filter(!is.na(Risk_norm)) |>
     dplyr::group_by(Sector_ID) |>
@@ -147,8 +155,8 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
     ) |>
     dplyr::group_by(Sector_ID) |>
     dplyr::mutate(
-      Vulnerability_Z = range01(Vulnerability_Z),
-      Exposure_Z      = range01(Exposure)
+      Vulnerability_Z = range01(Vulnerability_Z, preserve_zeros = FALSE),
+      Exposure_Z      = range01(Exposure,        preserve_zeros = FALSE)
     ) |>
     dplyr::ungroup() |>
     dplyr::mutate(Risk_Z = compute_tri(Exposure_Z, Vulnerability_Z, 0.5)) |>
@@ -156,11 +164,8 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
     dplyr::mutate(Risk_Z_norm = range01(Risk_Z)) |>
     dplyr::ungroup()
 
-  rho_z <- cor(z_data$Risk_norm, z_data$Risk_Z_norm,
-               use = "pairwise.complete.obs", method = "spearman")
-
-  zscore_row <- tibble::tibble(test = "Z-score normalization",
-                               spearman_rho = round(rho_z, 4))
+  zscore_row <- .sens_row("Z-score normalization", z_data,
+                          "Risk_norm", "Risk_Z_norm")
 
   # ───────────────────────────────────────────────
   # F. EDGAR-BASED SCOPE 1 SENSITIVITY (C19-C20, C23, C24)
@@ -168,7 +173,8 @@ run_sensitivity <- function(risk_data, edgar_scope1 = NULL) {
   edgar_rows <- if (!is.null(edgar_scope1)) {
     run_edgar_sensitivity(risk_data, edgar_scope1)
   } else {
-    tibble::tibble(test = character(0), spearman_rho = numeric(0))
+    tibble::tibble(test = character(0), rho_pooled = numeric(0),
+                   rho_within_sector = numeric(0))
   }
 
   # ───────────────────────────────────────────────
