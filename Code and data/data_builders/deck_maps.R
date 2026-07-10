@@ -58,13 +58,54 @@ build_deck_maps <- function(sector_id = NULL, suffix = "") {
     coord_sf(crs = .crs_lambert) +
     scale_fill_gradientn(colours = RColorBrewer::brewer.pal(7, "Oranges"),
                          name = "Mt CO2 (2023)", na.value = "grey92") +
+    ggtitle("CBAM component",
+            subtitle = "carbon in non-EU imports, downscaled by employment") +
     theme_void(base_size = 10) +
     theme(legend.position = "right",
+          plot.title = element_text(size = 26, face = "bold", hjust = 0.5),
+          plot.subtitle = element_text(size = 19, colour = "grey30", hjust = 0.5),
           plot.background = element_rect(fill = "white", colour = NA))
   f3 <- file.path(OUT, paste0("Figure_cbam_import_carbon", suffix, ".png"))
   ggsave(f3, pcbam, width = 11, height = 7, dpi = 300, bg = "white"); cat("wrote", f3, "\n")
   dc3 <- paste0("../Review/Hazard_Exposure_Slides/cbam_import_carbon", suffix, ".png")
   if (dir.exists(dirname(dc3))) file.copy(f3, dc3, overwrite = TRUE)
+}
+
+
+# Choropleth helper for the deck (ETS / CBAM / total covered carbon in Mt,
+# or the divided headline score when div = 1).
+mt_choro <- function(sec_row, var, pal_name, suffix, stem, title, subtitle,
+                     div = 1e6, legend = "Mt CO2 (2023)") {
+  cb <- tri |> filter(Sector_ID == sec_row)
+  cb$val <- cb[[var]] / div
+  mB <- layers$nuts2 |> left_join(cb, by = "NUTS_ID") |> st_transform(.crs_lambert)
+  pl <- ggplot() +
+    geom_sf(data = layers$europe_bg, fill = "grey92", colour = "grey80", linewidth = 0.15) +
+    geom_sf(data = mB, aes(fill = val), colour = "grey35", linewidth = 0.1) +
+    geom_sf(data = layers$eu_outline, fill = NA, colour = "grey15", linewidth = 0.25) +
+    coord_sf(crs = .crs_lambert) +
+    scale_fill_gradientn(colours = RColorBrewer::brewer.pal(7, pal_name),
+                         name = legend, na.value = "grey92") +
+    ggtitle(title, subtitle = subtitle) +
+    theme_void(base_size = 10) +
+    theme(legend.position = "right",
+          plot.title = element_text(size = 26, face = "bold", hjust = 0.5),
+          plot.subtitle = element_text(size = 19, colour = "grey30", hjust = 0.5),
+          plot.background = element_rect(fill = "white", colour = NA))
+  f <- file.path(OUT, paste0("Figure_", stem, suffix, ".png"))
+  ggsave(f, pl, width = 11, height = 7, dpi = 300, bg = "white"); cat("wrote", f, "\n")
+  dc <- paste0("../Review/Hazard_Exposure_Slides/", stem, suffix, ".png")
+  if (dir.exists(dirname(dc))) file.copy(f, dc, overwrite = TRUE)
+}
+for (x in list(list("C", ""), list("C24", "_C24"))) {
+  mt_choro(x[[1]], "exposure_ETS", "Blues", x[[2]], "ets_carbon_choro",
+           "ETS component", "verified plant emissions 2023, aggregated to regions")
+  mt_choro(x[[1]], "exposure_total", "Greens", x[[2]], "total_carbon_choro",
+           "Exposure not divided", "total covered carbon: ETS + CBAM tonnes")
+  mt_choro(x[[1]], "Exposure", "Purples", x[[2]], "exposure_divided_score",
+           "Exposure divided by employment (headline)",
+           "log of covered carbon per sector employee, scaled 0–1",
+           div = 1, legend = "score (0–1)")
 }
 
 build_deck_maps(NULL, "")

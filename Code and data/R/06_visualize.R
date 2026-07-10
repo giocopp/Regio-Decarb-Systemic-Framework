@@ -164,17 +164,17 @@ plot_tri_maps <- function(risk_data, output_dir,
       sf::st_transform(.crs_lambert)
 
     p_exp <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Exposure", "Exposure", pal_exp, bins = TRUE) +
+                         "Exposure", "Exposure", pal_exp) +
       ggplot2::ggtitle("Exposure") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
     p_vul <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Vulnerability", "Vulnerability", pal_vul, bins = TRUE) +
+                         "Vulnerability", "Vulnerability", pal_vul) +
       ggplot2::ggtitle("Vulnerability") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
     p_tri <- .single_map(sub_sf, layers$europe_bg, layers$eu_outline,
-                         "Risk_norm", "Risk", pal_risk, bins = TRUE) +
+                         "Risk_norm", "Risk", pal_risk) +
       ggplot2::ggtitle("Risk") +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"))
 
@@ -372,16 +372,13 @@ plot_risk_maps <- function(risk_data, output_dir) {
                                                       face = "bold"))
   )
   p1 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Exposure",
-                    "Exposure", RColorBrewer::brewer.pal(7, "Purples"),
-                    bins = TRUE) +
+                    "Exposure", RColorBrewer::brewer.pal(7, "Purples")) +
     ttl("Exposure")
   p2 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Vulnerability",
-                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues"),
-                    bins = TRUE) +
+                    "Vulnerability", RColorBrewer::brewer.pal(7, "Blues")) +
     ttl("Vulnerability")
   p3 <- .single_map(mC, layers$europe_bg, layers$eu_outline, "Risk_norm",
-                    "Risk", RColorBrewer::brewer.pal(7, "Reds"),
-                    bins = TRUE) +
+                    "Risk", RColorBrewer::brewer.pal(7, "Reds")) +
     ttl("Risk")
 
   combo <- (p1 | p2 | p3) + patchwork::plot_annotation(
