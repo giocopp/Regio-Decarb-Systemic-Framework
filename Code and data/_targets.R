@@ -153,9 +153,8 @@ list(
   ),
 
   # TECH-RIS.xlsx is regenerated OUTSIDE the pipeline by
-  # data_builders/build_tech_ris.R (official RIS 2025 database). Track it as a
-  # file target so content changes invalidate the harmonize chain — before
-  # 2026-07-03 it was untracked and edits silently never propagated.
+  # data_builders/build_tech_ris.R; tracked as a file target so content
+  # changes invalidate the harmonize chain.
   tar_target(
     ris_file,
     "Initial data/Non sector data/TECH-RIS.xlsx",
@@ -369,13 +368,11 @@ list(
   # Exposure = covered carbon volume (geocoded ETS + CBAM legs).
   # See METHODOLOGY.md §10.1 and R/exposure.R.
 
-  # "minmax" | "log" | "rank" (sensitivity_risk compares all three)
-  tar_target(tri_norm_mode, "log"),   # FINAL 2026-07-09: log headline
+  # Headline Exposure normalisation ("minmax" and "rank" are sensitivity rows)
+  tar_target(tri_norm_mode, "log"),
 
-  # Exposure denominator (2026-07-09): "per_employee" — covered carbon per
-  # employee (intensity; removes the region-size component) — or "volume"
-  # (raw tonnes, the former headline, kept as a sensitivity row). See
-  # METHODOLOGY §10.1 and assemble_exposure() in R/exposure.R.
+  # Headline Exposure denominator: covered carbon per sector employee;
+  # "volume" (raw tonnes, no division) is the sensitivity alternative (§10.1)
   tar_target(tri_exposure_denom, "per_employee"),
 
   # EUTL inputs built once by data_builders/ets_geocode.R; provenance in
@@ -392,11 +389,8 @@ list(
   ),
 
   # HEADLINE CBAM component: employment-share downscaling weights for ALL
-  # sectors (heavy_sectors = character(0)) — adopted 2026-07-03 after the
-  # external trade validation (METHODOLOGY §14): employment locates the
-  # importing users of covered inputs, matches the pipeline's canonical
-  # downscaling rule (§5), fits observed regional imports at ρ = 0.91 and
-  # respects the physical import ceilings the plant-emission hybrid breaches.
+  # sectors (heavy_sectors = character(0)); externally validated against
+  # observed regional trade (§14)
   tar_target(
     cbam_leg,
     {
@@ -409,9 +403,8 @@ list(
   ),
 
   # CBAM component under the full-embodied (cradle-to-gate) intensity —
-  # robustness input for the sensitivity battery (REVISION.md §23). Same
-  # employment-only weights as the headline so the comparison isolates the
-  # intensity basis. Headline stays direct.
+  # sensitivity input only; same weights as the headline so the comparison
+  # isolates the intensity basis (§14)
   tar_target(
     cbam_leg_embodied,
     {
@@ -425,9 +418,7 @@ list(
   ),
 
   # CBAM component under the former hybrid weights (plant-emission shares in
-  # the four heavy sectors) — retained ONLY as the allocation-sensitivity
-  # variant; rejected as headline by the external validation (ρ = 0.69,
-  # ceiling breaches in Sardegna 3.4× / Puglia 1.4× — METHODOLOGY §14).
+  # the four heavy sectors) — allocation-sensitivity variant only (§14)
   tar_target(
     cbam_leg_hybrid,
     {

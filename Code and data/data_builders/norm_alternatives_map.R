@@ -1,13 +1,8 @@
 # norm_alternatives_map.R — deck figure: Total-Manufacturing Exposure and
-# Risk under min-max (headline) vs log. Rank was dropped from the slides
-# (2026-07-09): it is the continuous version of the quintile-class map
-# rendering and agrees with log at rho 0.98 — it stays only as a
-# sensitivity-workbook row.
-# CONTINUOUS fills on purpose: the figure exists to show how the score
-# SPACING changes — the Exposure ordering is identical under all three
-# (Spearman = 1.00); Risk reranks at rho ~ 0.78 (minmax vs log/rank) while
-# log and rank agree at 0.98. Headline = tri_norm_mode (minmax); the choice
-# is an open aggregation decision (METHODOLOGY §10.1 / §14).
+# Risk under log (the headline, tri_norm_mode) vs min-max, plus quintile
+# classes (= binned rank; rank itself stays a sensitivity-workbook row).
+# CONTINUOUS fills on purpose: the figure shows how score SPACING changes —
+# the ordering is identical under all three norms (METHODOLOGY §10.1, §14).
 # Run from "Code and data/":  Rscript data_builders/norm_alternatives_map.R
 
 suppressMessages({library(dplyr); library(sf); library(ggplot2)

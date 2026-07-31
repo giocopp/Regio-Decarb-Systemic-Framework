@@ -238,15 +238,9 @@ write_empl_region_xlsx <- function(empl_weights, out_path) {
 
 # ── 2) Sector concentration (Diversification dimension) ────────────────────
 
-#' Share of the focal sector in the region's total manufacturing
-#' employment, per (NUTS-2 region x NACE sub-sector). Higher share means
-#' the region depends more heavily on that sector and has less alternative
-#' employment to absorb a shock to it -- so this is the vulnerability-side
-#' input to the Diversification dimension.
-#'
-#' Replaces an earlier region-only Herfindahl-Hirschman index, which by
-#' construction did not vary across sectors and so produced identical
-#' Diversification maps for every sector.
+#' Share of the focal sector in the region's total manufacturing employment,
+#' per (NUTS-2 region x NACE sub-sector): higher share = more regional
+#' dependence on the sector. Legacy-baseline Diversification input only (§9).
 create_sector_concentration <- function(empl_shares_path) {
 
   empl <- readxl::read_xlsx(empl_shares_path)
@@ -273,14 +267,10 @@ create_sector_concentration <- function(empl_shares_path) {
 
 # ── 3) Policy Pressure ──────────────────────────────────────────────────────
 
-#' Policy_Pressure per NACE sector = sum of hard-coded ETS and CBAM
-#' coverage scores, replicated to every NUTS-2 region. The two schemes
-#' stack rather than substitute: a sector covered by both faces both
-#' costs simultaneously (ETS prices direct emissions, CBAM prices the
-#' carbon content of imports of the same goods), so the cumulative
-#' regulatory pressure is additive. Raw range [0, 2]; min-max
-#' normalisation in 04_normalize.R rescales to [0.01, 0.99] within the
-#' indicator.
+#' Policy_Pressure per NACE sector = sum of hard-coded ETS and CBAM coverage
+#' scores (additive: a sector covered by both faces both costs), replicated
+#' to every NUTS-2 region. Raw range [0, 2]. Computed for reference only —
+#' in no composite (§8).
 create_policy_pressure <- function(base_data_path) {
 
   policy_data <- tibble::tibble(
@@ -636,15 +626,9 @@ create_scope3 <- function(empl_weights) {
 
 # ── 5) QoG Institutions ─────────────────────────────────────────────────────
 
-#' Extract European Quality of Government Index (EQI) at NUTS-2 level
-#'
-#' Reads the standalone EQI regional release (qog_eqi_long_24.csv, Charron
-#' et al. 2024; waves 2010-2024) and uses the requested wave (default 2024,
-#' the latest). Countries surveyed at NUTS-2 enter directly (NUTS-2021
-#' codes; HR02/HR05/HR06 are recombined to HR04 downstream in
-#' reshape_to_grid). Belgium and Germany are surveyed at NUTS-1 and are
-#' replicated to their NUTS-2 regions; the single-NUTS-2 states (CY, EE,
-#' LU, LV, MT) carry the national score.
+#' European Quality of Government Index (EQI) at NUTS-2 (qog_eqi_long_24.csv,
+#' Charron et al. 2024). NUTS-1-surveyed countries (BE, DE) are replicated to
+#' their NUTS-2 regions; single-NUTS-2 states carry the national score.
 #'
 #' @param qog_path Path to qog_eqi_long_24.csv
 #' @param wave EQI survey year to use (default 2024)
@@ -801,16 +785,14 @@ create_re_potential <- function(enspreso_path) {
     ) |>
     dplyr::filter(Country_ID %in% eu27)
 
-  # ENSPRESO carries pre-2016 NUTS-2 codes. Without a crosswalk, all of
-  # France, six Polish regions, HU1x, Ireland and Lithuania fail the join and
-  # were silently country-median-imputed (bug found 2026-07-03). Two steps:
+  # ENSPRESO carries pre-2016 NUTS-2 codes; without a crosswalk France, six
+  # Polish regions, HU1x, Ireland and Lithuania fail the join. Two steps:
   # (1) 1:1 renames, verified geometrically against gisco NUTS-2013 vs
   # NUTS-2021 polygons (>=97% area overlap for every pair);
-  # (2) area-share splits for the reorganised regions, with shares computed
-  # at run time from gisco NUTS-2021 polygon areas (EPSG:3035) — a disclosed
-  # approximation for an extensive land-based potential (TWh).
+  # (2) area-share splits for the reorganised regions, computed at run time
+  # from gisco NUTS-2021 polygon areas (EPSG:3035).
   # HR04 needs no mapping: ENSPRESO's (pre-split) HR04 equals the recombined
-  # HR04 of the 230-region grid and now survives reshape (03_reshape.R).
+  # HR04 of the 230-region grid (03_reshape.R).
   renames <- c(FR21 = "FRF2", FR22 = "FRE2", FR23 = "FRD2", FR24 = "FRB0",
                FR25 = "FRD1", FR26 = "FRC1", FR30 = "FRE1", FR41 = "FRF3",
                FR42 = "FRF1", FR43 = "FRC2", FR51 = "FRG0", FR52 = "FRH0",
@@ -1031,13 +1013,10 @@ create_cohesion_fund <- function(base_data_path) {
                   values = as.numeric(values))
 
   # Recode NUTS-2024 geographies onto the pipeline grid BEFORE the grid
-  # filter. Eurostat vintages from 2024 on arrive in NUTS-2024 codes
-  # (Utrecht NL31->NL35, Zuid-Holland NL33->NL36; Portugal PT16/17/18 split
-  # into PT19/PT1A-PT1D); the old `geo %in% base_d` filter silently dropped
-  # them, so those regions were written as missing and country-median-imputed
-  # downstream (bug found 2026-07-09). Merged codes are aggregated with the
-  # indicator's rule: mean for intensive (labour rates), sum for extensive
-  # (GFCF), mirroring `agg_rules`.
+  # filter — Eurostat vintages from 2024 on arrive in NUTS-2024 codes
+  # (NL31->NL35, NL33->NL36; PT16/17/18 -> PT19/PT1A-PT1D) and would
+  # otherwise be dropped. Merged codes aggregate with the indicator's rule:
+  # mean for intensive (labour rates), sum for extensive (GFCF).
   nuts24_to_grid <- c(NL35 = "NL31", NL36 = "NL33",
                       PT19 = "PT16", PT1D = "PT16",
                       PT1A = "PT17", PT1B = "PT17", PT1C = "PT18")
@@ -1072,9 +1051,7 @@ create_cohesion_fund <- function(base_data_path) {
                      Year = pick$year, Value = values)
 
   # Per-cell fallback (METHODOLOGY §4): a region missing/NA in the picked
-  # year keeps its most recent earlier non-NA value within the window
-  # (e.g. DEB2 unemployment, PL43). Previously implemented only in
-  # create_employment_weights — closed here 2026-07-09.
+  # year keeps its most recent earlier non-NA value within the window.
   filled <- out |> dplyr::filter(!is.na(Value)) |> dplyr::pull(NUTS_ID)
   gaps <- setdiff(intersect(base_d, unique(df$geo)), filled)
   if (length(gaps) > 0) {
@@ -1582,27 +1559,11 @@ create_berd <- function(base_data_path, empl_weights) {
 }
 
 
-#' Regional business R&D intensity = genuinely-regional R&D-capacity indicator
-#' from `rd_e_gerdreg` (sectperf = BES, R&D as % of regional GDP, NUTS-2),
-#' replicated across the manufacturing sectors. SUPERSEDES `create_berd()`.
-#'
-#' Why: the old `create_berd()` (national BERD-by-NACE downscaled by employment,
-#' then divided by employment in `04_normalize.R`) reduces algebraically to a
-#' country x sector constant — the downscale weight and the per-employee divisor
-#' cancel — so it carried NO within-country regional variation. The regional-
-#' resilience literature measures the innovation / adaptive-capacity channel with
-#' NUTS-2 R&D and patents (Bristow & Healy 2018; Filippetti et al. 2020; Toth et
-#' al. 2020; Rocchetta et al. 2021; Panori 2025); `rd_e_gerdreg` gives genuine
-#' regional business-R&D intensity. See LITERATURE_GATHERED.md section H.
-#'
-#' Kept under the Indicator name "BERD" so the Technology dimension, the reversed
-#' orientation (higher R&D -> lower vulnerability) and harmonisation are unchanged.
-#' Because it is now an INTENSITY (% of GDP), "BERD" is removed from the
-#' per-employee list in `R/04_normalize.R`.
-#'
-#' NB Eurostat codes (sectperf = "BES", unit = "PC_GDP") follow the standard R&D
-#' classification; confirm on the first networked run (the sandbox used for
-#' development had no Eurostat egress).
+#' Regional business R&D intensity from `rd_e_gerdreg` (sectperf = BES, R&D
+#' as % of regional GDP, NUTS-2), replicated across the manufacturing
+#' sectors. Kept under the Indicator name "BERD" (same Technology dimension
+#' and reversed orientation); as an intensity it is NOT in the per-employee
+#' list of `R/04_normalize.R`.
 #'
 #' @param empl_weights tibble (Country_ID, NUTS_ID, Sector_ID, weight) — supplies
 #'   the (region x sector) grid the region-level value is replicated across.
@@ -1633,11 +1594,10 @@ create_regional_berd <- function(empl_weights) {
     dplyr::filter(.year == pick$year) |>
     dplyr::transmute(NUTS_ID = geo, rd_pc_gdp = values)
 
-  # Fallback chain for regions absent in the picked year (found 2026-07-03:
-  # PT16-18/PL43/PL62 publish only earlier years; Belgium publishes BES PC_GDP
-  # at NUTS-1 only; the Netherlands only nationally). BERD is an intensity
-  # (% of GDP), so replicating a coarser geography is the same §5 rule used
-  # for other intensive indicators (and mirrors the QoG NUTS-1 handling).
+  # Fallback chain for regions absent in the picked year (some regions
+  # publish only earlier years; Belgium publishes BES PC_GDP at NUTS-1 only,
+  # the Netherlands only nationally). Replicating a coarser geography is the
+  # §5 rule for intensive indicators:
   #   (i)  per-cell latest non-NA year within the window (§4 fallback);
   #   (ii) NUTS-1 parent value, replicated;
   #   (iii) national value, replicated.

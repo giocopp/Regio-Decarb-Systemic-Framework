@@ -1,9 +1,6 @@
 # build_tech_ris.R — regenerate Initial data/Non sector data/TECH-RIS.xlsx
-# from the official EC RIS/EIS database (previously a manual, incomplete
-# extract: the RIS 2023 annex leaves the five single-region countries EMPTY;
-# fixed 2026-07-03 by switching to the RIS 2025 edition database, which
-# carries the Regional Innovation Index (RII) for year 2024 for all regions,
-# scale "relative to EU 2018").
+# from the official EC RIS 2025 database (Regional Innovation Index, year
+# 2024, scale "relative to EU 2018").
 #
 # Source: https://ec.europa.eu/assets/rtd/eis/2025/downloads/RIS_web_download.xlsx
 # (sheet "RIS"; Indicator code "RII"; Year 2024; column "Value relative to EU in 2018")

@@ -1,16 +1,13 @@
 # exposure.R — covered-carbon Exposure and the headline Risk index (TRI).
 #
-#   Exposure_raw = ets_emis_t + CBAM_emb_tCO2          # covered carbon, tCO2
-#   Exposure     = norm(Exposure_raw), POOLED across all cells.
+#   Exposure_raw = ets_emis_t + CBAM_emb_tCO2       # covered carbon, tCO2
+#   Exposure     = norm(Exposure_raw / L)           # POOLED across all cells
 #
-# Exposure is a per-cell covered-carbon volume (tonnes CO2): EUTL verified ETS
-# emissions + embodied carbon in extra-EU imports of CBAM-covered goods. No
-# carbon price is applied: a single EU-wide EUA price is a common scalar that
-# cancels under any monotone normalisation, so it never moved the ranking. The
-# earlier priced formulation (EUA x free-allocation/CBAM coverage) and its
-# 2024-2034 phase-in trajectory were removed (see git history). norm = "log"
-# (tri_norm_mode, FINAL 2026-07-09); true-zero cells keep Exposure = 0;
-# pooled normalisation throughout.
+# with L the cell's sector employment (the "volume" variant skips the
+# division). No carbon price enters: a single EU-wide EUA price is a common
+# scalar that cancels under any monotone normalisation (METHODOLOGY §10.1).
+# Headline settings live in _targets.R: tri_norm_mode = "log",
+# tri_exposure_denom = "per_employee". True-zero cells keep Exposure = 0.
 
 .eu27_codes <- function()
   c("AT","BE","BG","CY","CZ","DE","DK","EE","EL","ES","FI","FR","HR","HU",
@@ -29,14 +26,9 @@
   "C26","C26-C27","C27","C26-C27",
   "C31_32","C31-C33","C33","C31-C33")
 
-# Headline-TRI vulnerability dimensions (4). Supply_Chain (Import_ExtraEU) is
-# intentionally absent (imports already enter the CBAM component of Exposure).
-# Diversification (= Sector_Concentration alone) was dropped 2026-07-03
-# (decision with supervisor): under POOLED normalisation the indicator encodes
-# which sectors are large everywhere (food ~0.27, machinery ~0.29 vs chemicals
-# ~0.07 sector means), i.e. sector size, not regional specialisation — and it
-# was a single-indicator pillar. Sector_Concentration remains computed and
-# stays a dimension of the legacy within-sector baseline (05_aggregate.R).
+# Headline-TRI vulnerability dimensions (4). Supply_Chain and Diversification
+# are intentionally excluded (METHODOLOGY §9.1); Sector_Concentration remains
+# a dimension of the legacy within-sector baseline only (05_aggregate.R).
 .vuln_dims <- function() list(
   Energy       = c("Energy_Consumption", "Fossil_Share",
                    "Renewables_Share", "RE_Potential"),
@@ -75,17 +67,12 @@ read_ets_nuts2 <- function(path) {
 
 # ── CBAM leg ─────────────────────────────────────────────────────────────────
 
-#' CBAM downscaling weights. The HEADLINE uses employment shares for every
-#' sector (`heavy_sectors = character(0)`): employment locates the importing
-#' users of the covered inputs, matches the pipeline's canonical downscaling
-#' rule (METHODOLOGY §5), and is the allocation that survives the external
-#' trade validation (ρ = 0.91 vs observed regional imports and no material
-#' physical-ceiling breach, vs ρ = 0.69 with breaches for the plant-emission
-#' hybrid — METHODOLOGY §14). The default `heavy_sectors` builds that hybrid
-#' (plant-emission shares for the four ETS sectors), retained ONLY as the
-#' `cbam_leg_hybrid` sensitivity variant. Heavy-sector weights span the full
-#' country grid with explicit 0 for plant-less regions — otherwise the
-#' downscaler's Sector-C fallback refills them and inflates the total.
+#' CBAM downscaling weights. The headline passes `heavy_sectors = character(0)`
+#' — employment shares for every sector (METHODOLOGY §14); the default builds
+#' the plant-emission hybrid, retained only as the `cbam_leg_hybrid`
+#' sensitivity variant. Heavy-sector weights span the full country grid with
+#' explicit 0 for plant-less regions — otherwise the downscaler's Sector-C
+#' fallback refills them and inflates the total.
 build_cbam_weights <- function(empl_weights, ets_geo,
                                heavy_sectors = c("C16-C18", "C19-C20",
                                                  "C23", "C24")) {
@@ -128,12 +115,9 @@ build_cbam_weights <- function(empl_weights, ets_geo,
     "M73","M74_75","N77","N78","N79","N80-82","O84","P85","Q86",
     "Q87_88","R90-92","R93","S94","S95","S96","T","U")
 
-#' Total cradle-to-gate embodied emission intensity (tCO2 per MEUR of output),
-#' the full footprint f^T (I - A)^-1 for every (origin, FIGARO industry) — direct
-#' + ALL upstream tiers, incl. electricity. Same MRIO machinery as
-#' create_scope3() (R/01_create_data.R); here the total footprint (not
-#' upstream-only). Used by compute_cbam_leg(intensity = "embodied"). See
-#' Review/EXPOSURE_CARBON_COST_REVISION.md §23.
+#' Total cradle-to-gate embodied emission intensity (tCO2 per MEUR of output):
+#' the full footprint f^T (I - A)^-1 per (origin, FIGARO industry). Used by
+#' compute_cbam_leg(intensity = "embodied"), a sensitivity variant (§14).
 .figaro_embodied_intensity <- function(io, ghg) {
   real_ind <- .figaro_real_industries()
   io  <- dplyr::mutate(io,  dplyr::across(c(c_orig, c_dest, ind_ava, ind_use),
@@ -178,15 +162,12 @@ build_cbam_weights <- function(empl_weights, ets_geo,
   tibble::tibble(c_orig = idx$region, ind_ava = idx$ind, f = e_total)
 }
 
-#' CBAM-leg quantity: embodied carbon in extra-EU imports of CBAM-covered goods,
-#' downscaled to NUTS-2 x sector. `intensity = "direct"` (headline) uses the
-#' origin's Scope-1 intensity; `intensity = "embodied"` uses the full
-#' cradle-to-gate footprint (f^T (I-A)^-1) as the robustness variant motivated in
-#' Review/EXPOSURE_CARBON_COST_REVISION.md §23 and
-#' Review/EXPOSURE_CARBON_COST_LITERATURE.md §5b (Tanaka 2025; Su 2022).
-#' Caveats: FIGARO 2-digit industries are broader than the exact CBAM goods, and
-#' all embodied import carbon is counted in full (no deduction for carbon
-#' already priced in the origin country).
+#' CBAM-leg quantity: embodied carbon in extra-EU imports of CBAM-covered
+#' goods, downscaled to NUTS-2 x sector. `intensity = "direct"` (headline)
+#' uses the origin's Scope-1 intensity; `intensity = "embodied"` the full
+#' cradle-to-gate footprint (sensitivity variant, §14). Caveats — FIGARO
+#' 2-digit industries are broader than the exact CBAM goods list, and no
+#' deduction is made for carbon already priced at origin (§10.1).
 #'
 #' @param io  FIGARO io tibble (ind_use, ind_ava, c_dest, c_orig, values), MEUR
 #' @param ghg FIGARO ghg tibble (c_orig, c_dest, nace_r2, values), kt CO2eq
@@ -253,46 +234,22 @@ compute_cbam_leg <- function(io, ghg, empl_weights,
 
 #' Assemble pooled Exposure from the covered carbon of a cell.
 #'
-#' Exposure_raw is the cell's covered carbon volume in tonnes CO2: EUTL verified
-#' ETS emissions + embodied carbon in extra-EU imports of CBAM-covered goods. No
-#' carbon price is applied (a single EU-wide EUA price is a common scalar that
-#' cancels under normalisation — see file header).
-#'
-#' `denom` sets the quantity that is normalised (2026-07-09, revised same
-#' day after verification):
-#'   - "per_employee" (headline): Exposure_raw / the REGION's total
-#'     manufacturing employment — covered carbon per regional manufacturing
-#'     job (tCO2 per job of the regional industrial base). The denominator
-#'     is deliberately NOT the cell's own sector employment: NUTS-2 sector
-#'     employment fails in four verified ways, all of which shrink the
-#'     denominator exactly at plant regions —
-#'       (1) HQ attribution: EL65 reports 43 refining employees against the
-#'           2 Mt Corinth refinery while 80% of Greek C19 employment sits
-#'           in Attiki;
-#'       (2) confidentiality suppression as MISSING ROWS (IJmuiden's NL32
-#'           C24 and Repsol Cartagena's ES62 C19 simply absent), so sums
-#'           silently treat them as zero;
-#'       (3) the SBS "persons employed" definition EXCLUDES manpower
-#'           supplied by other enterprises (Eurostat SBS glossary) — plant
-#'           contractors are booked under NACE 78.2, not the plant sector;
-#'       (4) reporting volatility at constant plants (PT11 C19: 462 -> 55
-#'           in one year; EL52 184 -> 875; ITG2 496 -> 1,698).
-#'     Regional manufacturing TOTALS have none of these pathologies.
-#'     Consequence: within a region all cells share the denominator, so the
-#'     cross-sector pattern inside a region follows the tonnes; across
-#'     regions the intensity measures the burden on the regional industrial
-#'     employment base.
-#'   - "volume": raw tonnes (no division), kept as the named alternative in
-#'     the sensitivity workbook.
+#' `denom` sets the quantity that is normalised:
+#'   - "per_employee" (headline): Exposure_raw / the cell's own sector
+#'     employment — covered carbon per job of the exposed workforce, with a
+#'     three-tier fallback where SBS suppresses or omits the cell. Rationale
+#'     and the known limitations of the employment source: METHODOLOGY §10.1.
+#'   - "volume": raw tonnes (no division), kept as a sensitivity variant.
 #'
 #' @param df tibble with NUTS_ID, Country_ID, Sector_ID, ets_emis_t
 #'   (EUTL verified emissions, tonnes), CBAM_emb_tCO2 (tonnes) and — for
 #'   denom = "per_employee" — pers_employed
 #' @param norm "log" (the wired headline, tri_norm_mode), "minmax", or "rank"
 #' @param within_sector diagnostic only: if TRUE normalize within Sector_ID
-#' @param denom "per_employee" (headline; regional mfg employment) or "volume"
+#' @param denom "per_employee" (headline; cell sector employment) or "volume"
 #' @return df plus Exposure_raw (covered tCO2), empl_int + exposure_per_empl
-#'   (per_employee only; empl_int = the regional denominator) and Exposure
+#'   (per_employee only; empl_int = the denominator as used, incl. fallbacks)
+#'   and Exposure
 assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax",
                               denom = c("per_employee", "volume")) {
   norm  <- match.arg(norm, c("log", "minmax", "rank"))
@@ -303,17 +260,10 @@ assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax",
   if (denom == "per_employee") {
     if (!"pers_employed" %in% names(d))
       stop("assemble_exposure(denom = 'per_employee') needs pers_employed")
-    # Cell-level sector employment (FINAL, 2026-07-09): the denominator is
-    # the sector's own regional workforce. Where SBS suppresses or omits it
-    # (confidential cells, e.g. IJmuiden's NL32 C24; countries reporting no
-    # employment in the sector at all, e.g. LU C24), a three-tier fallback
-    # estimates it: own value -> region-manufacturing share x national
-    # sector employment -> region manufacturing x EU-wide sector share.
-    # The known SBS pathologies (HQ attribution, contractor exclusion,
-    # reporting volatility) bias some cell denominators low; under the LOG
-    # headline normalisation (tri_norm_mode = "log") those artifact
-    # outliers are compressed instead of pinning the scale — disclosed in
-    # METHODOLOGY §10.1.
+    # Denominator = the cell's own sector employment; three-tier fallback for
+    # suppressed/zero cells: own value -> region-manufacturing share x
+    # national sector employment -> region manufacturing x EU-wide sector
+    # share. SBS artifacts are compressed by the log normalisation (§10.1).
     d <- d |>
       dplyr::group_by(NUTS_ID) |>
       dplyr::mutate(.reg_mfg = sum(pers_employed, na.rm = TRUE)) |>
@@ -362,7 +312,7 @@ assemble_exposure <- function(df, within_sector = FALSE, norm = "minmax",
 }
 
 
-# ── Pooled Vulnerability (5 dimensions) ──────────────────────────────────────
+# ── Pooled Vulnerability (4 dimensions) ──────────────────────────────────────
 
 #' Pooled 4-dimension Vulnerability for the headline TRI ("rank" ranks
 #' the top level; otherwise min-max — log applies to the raw exposure only).
@@ -379,11 +329,8 @@ build_vulnerability_pooled <- function(data_reshaped, empl_weights,
     vw[[paste0("Vuln_", nm)]] <-
       rowMeans(dplyr::select(vw, dplyr::all_of(vars)), na.rm = TRUE)
   }
-  # Re-normalise each dimension before averaging — the pooled analogue of the
-  # legacy per-dimension re-normalisation (§9). Without this step dimensions
-  # entered the mean with raw variances and effective influence was very
-  # unequal (2026-07-03 audit: correlation with the composite 0.81 for
-  # Technology vs 0.11 for Energy). preserve_zeros = FALSE: bounded scores.
+  # Re-normalise each dimension to [0,1] before averaging so all four enter
+  # with comparable variance (§9.1). preserve_zeros = FALSE: bounded scores.
   for (nm in names(dims)) {
     col <- paste0("Vuln_", nm)
     if (col %in% names(vw))
@@ -403,7 +350,7 @@ build_vulnerability_pooled <- function(data_reshaped, empl_weights,
 # ── Risk-index builder ───────────────────────────────────────────────────────
 
 #' Join the carbon-volume inputs (geocoded ETS + CBAM-embodied) onto the
-#' vulnerability grid. Missing legs are true zeros. Carries the 5 Vuln_*
+#' vulnerability grid. Missing legs are true zeros. Carries the Vuln_*
 #' dimension scores and pers_employed through for the decomposition figures.
 assemble_risk_panel <- function(vuln, ets_geo, cbam_leg) {
   vuln |>
@@ -482,7 +429,7 @@ rollup_risk_C <- function(tri_subsector, vuln, norm = "minmax",
 }
 
 #' Full headline panel (-> Final data/Risk_data.{xlsx,csv}):
-#' 11 sub-sectors + C roll-up, Scope 1/2/3 reference columns, the 5 Vuln_*
+#' 11 sub-sectors + C roll-up, Scope 1/2/3 reference columns, the Vuln_*
 #' dimension scores and pers_employed (for the decomposition figures),
 #' quintile bands. Exposure legs are published as exposure_ETS /
 #' exposure_CBAM / exposure_total (tonnes CO2).
@@ -561,8 +508,7 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
               d, "Risk_headline", "Risk_alt")
   })
 
-  # 3. CBAM intensity: headline direct vs full-embodied footprint
-  #    (Review/EXPOSURE_CARBON_COST_REVISION.md §23)
+  # 3. CBAM intensity: headline direct vs full-embodied footprint (§14)
   row_emb <- NULL
   if (!is.null(cbam_leg_embodied)) {
     tri_emb <- build_risk_tri(vuln, ets_geo, cbam_leg_embodied, norm = norm,
@@ -576,9 +522,7 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
                          d_emb, "Risk_headline", "Risk_emb")
   }
 
-  # 4. CBAM allocation: employment-only weights (headline, adopted after the
-  #    external trade validation — METHODOLOGY §14) vs the plant-emission
-  #    hybrid retained as the sensitivity variant
+  # 4. CBAM allocation: employment-only (headline) vs plant-emission hybrid (§14)
   row_alloc <- NULL
   if (!is.null(cbam_leg_hybrid)) {
     tri_alloc <- build_risk_tri(vuln, ets_geo, cbam_leg_hybrid, norm = norm,
@@ -608,11 +552,8 @@ run_risk_sensitivity <- function(risk_data, vuln, ets_geo,
                            d_denom, "Risk_headline", "Risk_vol")
   }
 
-  # 6. Exposure per unit of regional GDP (nama_10r_2gdp, MIO_EUR; live pull,
-  #    skipped when offline). Regional TOTAL GDP: sub-sector GVA does not
-  #    exist at NUTS-2, so this variant measures the regional economy's
-  #    carbon dependence on the sector rather than the sector's own
-  #    intensity — reported for comparison only.
+  # 6. Exposure per unit of regional TOTAL GDP (nama_10r_2gdp; live pull,
+  #    skipped when offline) — sub-sector GVA does not exist at NUTS-2 (§14)
   row_gdp <- tryCatch({
     nuts24 <- c(NL35 = "NL31", NL36 = "NL33", PT19 = "PT16", PT1D = "PT16",
                 PT1A = "PT17", PT1B = "PT17", PT1C = "PT18")

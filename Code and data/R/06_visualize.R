@@ -24,12 +24,10 @@
 #' Build a single choropleth map panel
 .single_map <- function(df, europe_bg, eu_outline, var, title, colours,
                         bins = FALSE) {
-  # bins = TRUE draws QUINTILE CLASSES of the positive values instead of the
-  # linear 0-1 gradient (2026-07-09): the per-job Exposure intensity is
-  # genuinely right-skewed (a handful of single-plant regions set the linear
-  # scale, median C-level Exposure 0.06), so the linear fill renders almost
-  # every region near-white. Quintile classes match the Risk_Band logic and
-  # change ONLY the map colouring - the index values are untouched.
+  # bins = TRUE draws QUINTILE CLASSES of the positive values instead of
+  # the linear 0-1 gradient: the intensity is right-skewed, so a linear fill
+  # renders almost every region near-white. Quintile classes match the
+  # Risk_Band logic and change ONLY the map colouring, not the values.
   base <- ggplot2::ggplot() +
     ggplot2::geom_sf(data = europe_bg,
                      fill = "grey90", colour = "grey80", linewidth = 0.15)
@@ -193,7 +191,7 @@ plot_tri_maps <- function(risk_data, output_dir,
     saved <- c(saved, outfile)
   }
 
-  # ── Figure 4: vulnerability dimension panels (4 dims since 2026-07-03) ──
+  # ── Figure 4: vulnerability dimension panels (4 dimensions) ──
   vuln_dims <- c(
     Energy       = "Vuln_Energy",
     Labour       = "Vuln_Labour",
